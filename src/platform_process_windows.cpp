@@ -86,6 +86,7 @@ class WindowsProcess final : public PlatformProcess {
 
     _process = info.hProcess;
     _thread = info.hThread;
+    _process_id = info.dwProcessId;
 
     if (!_tty) {
       CloseHandle(_stdout_write);
@@ -112,6 +113,7 @@ class WindowsProcess final : public PlatformProcess {
     }
 
     _running = false;
+    _process_id = 0;
     close_handles();
   }
 
@@ -123,6 +125,7 @@ class WindowsProcess final : public PlatformProcess {
     DWORD code = 0;
     if (!GetExitCodeProcess(_process, &code)) {
       _running = false;
+      _process_id = 0;
       return false;
     }
 
@@ -132,12 +135,20 @@ class WindowsProcess final : public PlatformProcess {
 
     _exit_code = static_cast<int>(code);
     _running = false;
+    _process_id = 0;
     close_handles();
     return false;
   }
 
   int exit_code() const override {
     return _exit_code;
+  }
+
+  int process_id() const override {
+    if (_running && _process_id != 0) {
+      return static_cast<int>(_process_id);
+    }
+    return -1;
   }
 
   bool read_available(std::string* out_chunk) override {
@@ -203,6 +214,7 @@ class WindowsProcess final : public PlatformProcess {
   HANDLE _stdout_write = nullptr;
   HANDLE _process = nullptr;
   HANDLE _thread = nullptr;
+  DWORD _process_id = 0;
 
   int _exit_code = 0;
   bool _running = false;

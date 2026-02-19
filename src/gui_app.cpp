@@ -22,6 +22,9 @@ std::string runtime_label(const ProcessRuntimeView& view) {
     return "disabled";
   }
   if (view.running) {
+    if (view.pid > 0) {
+      return "running - " + std::to_string(view.pid);
+    }
     return "running";
   }
   if (!view.ever_started) {

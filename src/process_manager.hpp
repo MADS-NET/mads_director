@@ -15,6 +15,7 @@ struct ProcessRuntimeView {
   std::string command;
   bool running = false;
   bool ever_started = false;
+  int pid = -1;
   int exit_code = 0;
   bool enabled = true;
   bool relaunch = false;

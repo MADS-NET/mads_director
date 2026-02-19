@@ -167,10 +167,12 @@ void ProcessManager::tick() {
     }
 
     if (process.process->is_running()) {
+      process.view.pid = process.process->process_id();
       continue;
     }
 
     process.view.running = false;
+    process.view.pid = -1;
     process.view.exit_code = process.process->exit_code();
 
     std::ostringstream line;
@@ -196,6 +198,7 @@ void ProcessManager::stop_all() {
     }
     process.process->stop();
     process.view.running = false;
+    process.view.pid = -1;
   }
 }
 
@@ -247,6 +250,7 @@ bool ProcessManager::stop_process(std::size_t index, std::string* out_error) {
 
   process.process->stop();
   process.view.running = false;
+  process.view.pid = -1;
   append_log(&process, "Process stopped by user.");
   return true;
 }
@@ -265,6 +269,7 @@ bool ProcessManager::restart_process(std::size_t index, std::string* out_error) 
   if (process.view.running) {
     process.process->stop();
     process.view.running = false;
+    process.view.pid = -1;
   }
 
   return start_process_internal(index, out_error);
@@ -441,6 +446,7 @@ bool ProcessManager::start_process_internal(std::size_t index, std::string* out_
 
   process.view.running = true;
   process.view.ever_started = true;
+  process.view.pid = process.process->process_id();
   process.view.exit_code = 0;
 
   append_log(&process, "Process started.");

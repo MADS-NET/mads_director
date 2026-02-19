@@ -230,6 +230,10 @@ class PosixProcess final : public PlatformProcess {
     return _exit_code;
   }
 
+  int process_id() const override {
+    return static_cast<int>(_pid);
+  }
+
   bool read_available(std::string* out_chunk) override {
     if (_stdout_fd < 0) {
       return false;
