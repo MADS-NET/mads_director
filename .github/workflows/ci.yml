@@ -42,7 +42,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $out = (& .\build\Release\director.exe --example 2>&1 | Out-String)
+          $out = (& .\build\Release\mads-director.exe --example 2>&1 | Out-String)
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (($out -notmatch "\[db\]") -or ($out -notmatch "enabled\s*=\s*true")) {
             Write-Error "Example output missing expected content"
@@ -67,6 +67,6 @@ jobs:
       - name: Smoke test example output (Unix)
         if: runner.os != 'Windows'
         run: |
-          ./build/director --example > /tmp/director-example.txt
+          ./build/mads-director --example > /tmp/director-example.txt
           grep -q "\[db\]" /tmp/director-example.txt
           grep -q "enabled = true" /tmp/director-example.txt

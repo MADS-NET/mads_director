@@ -33,18 +33,22 @@ cmake --build build
 ## Run
 
 ```bash
-./build/director ./examples/director.toml
+./build/mads-director ./examples/director.toml
 ```
 
 Show built-in example TOML:
 
 ```bash
-./build/director
+./build/mads-director
 # or
-./build/director --example
+./build/mads-director --example
 ```
 
 Internal attach client mode (used by GUI): `--attach-socket <path>`
+
+Executable naming:
+- default output name: `mads-director`
+- set `-DMADS_CMD_PREFIX=` to build plain `director`
 
 ## Config format
 

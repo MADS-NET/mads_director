@@ -5,6 +5,13 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+set(MADS_CMD_PREFIX "mads" CACHE STRING "Optional command prefix for the director executable name.")
+if(MADS_CMD_PREFIX STREQUAL "")
+  set(DIRECTOR_EXE_NAME "director")
+else()
+  set(DIRECTOR_EXE_NAME "${MADS_CMD_PREFIX}-director")
+endif()
+
 include(FetchContent)
 
 FetchContent_Declare(
@@ -46,7 +53,7 @@ target_include_directories(imgui PUBLIC
 
 target_link_libraries(imgui PUBLIC glfw)
 
-add_executable(director
+add_executable(${DIRECTOR_EXE_NAME}
   src/main.cpp
   src/config.cpp
   src/attach_client.cpp
@@ -57,11 +64,11 @@ add_executable(director
   src/platform_process_windows.cpp
 )
 
-target_include_directories(director PRIVATE src)
+target_include_directories(${DIRECTOR_EXE_NAME} PRIVATE src)
 
 find_package(OpenGL REQUIRED)
 
-target_link_libraries(director PRIVATE
+target_link_libraries(${DIRECTOR_EXE_NAME} PRIVATE
   tomlplusplus::tomlplusplus
   imgui
   glfw
@@ -69,7 +76,8 @@ target_link_libraries(director PRIVATE
 )
 
 if(MSVC)
-  target_compile_options(director PRIVATE /W4 /permissive-)
+  target_compile_options(${DIRECTOR_EXE_NAME} PRIVATE /W4 /permissive-)
 else()
-  target_compile_options(director PRIVATE -Wall -Wextra -Wpedantic)
+  target_compile_options(${DIRECTOR_EXE_NAME} PRIVATE -Wall -Wextra -Wpedantic)
+  target_compile_definitions(${DIRECTOR_EXE_NAME} PRIVATE GL_SILENCE_DEPRECATION)
 endif()
