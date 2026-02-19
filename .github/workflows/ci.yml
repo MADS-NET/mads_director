@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        run: cmake --build build --config Release --parallel
+
+      - name: Smoke test example output (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $out = & .\build\Release\director.exe --example
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($out -notmatch "\[db\]" -or $out -notmatch "enabled = true") {
+            Write-Error "Example output missing expected content"
+            exit 1
+          }
+
+      - name: Configure (Unix)
+        if: runner.os != 'Windows'
+        run: cmake -S . -B build -G Ninja
+
+      - name: Build (Unix)
+        if: runner.os != 'Windows'
+        run: cmake --build build --parallel
+
+      - name: Smoke test example output (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          ./build/director --example > /tmp/director-example.txt
+          grep -q "\[db\]" /tmp/director-example.txt
+          grep -q "enabled = true" /tmp/director-example.txt

@@ -8,6 +8,8 @@ struct ProcessSpec {
   std::string name;
   std::string command;
   std::optional<std::string> after;
+  std::optional<std::string> workdir;
+  bool enabled = true;
   int scale = 1;
   bool relaunch = false;
   bool tty = false;

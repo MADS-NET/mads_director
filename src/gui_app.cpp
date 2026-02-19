@@ -24,6 +24,9 @@
 namespace {
 
 std::string runtime_label(const ProcessRuntimeView& view) {
+  if (!view.enabled) {
+    return "disabled";
+  }
   if (view.running) {
     return "running";
   }
@@ -299,6 +302,7 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path) {
     if (view != nullptr) {
       ImGui::Text("Selected: %s", view->name.c_str());
       ImGui::Text("State: %s", runtime_label(*view).c_str());
+      ImGui::Text("Enabled: %s", view->enabled ? "true" : "false");
       std::array<char, 4096> command_buffer{};
       const std::size_t command_copy = std::min(view->command.size(), command_buffer.size() - 1);
       view->command.copy(command_buffer.data(), command_copy);
@@ -315,6 +319,12 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path) {
       }
       ImGui::Separator();
 
+      if (!view->enabled) {
+        ImGui::TextUnformatted("This process is disabled (enabled=false) and will not start.");
+      }
+      if (!view->enabled) {
+        ImGui::BeginDisabled();
+      }
       if (ImGui::Button("Start")) {
         std::string error;
         status_line = manager->start_process(selected, &error) ? "Process started." : error;
@@ -329,8 +339,11 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path) {
         std::string error;
         status_line = manager->restart_process(selected, &error) ? "Process restarted." : error;
       }
+      if (!view->enabled) {
+        ImGui::EndDisabled();
+      }
 
-      if (view->tty) {
+      if (view->tty && view->enabled) {
         ImGui::Separator();
         ImGui::TextUnformatted("TTY Interaction");
 
@@ -349,7 +362,7 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path) {
         }
       }
 
-      if (!view->tty || tty_modes[selected] == 0) {
+      if (view->enabled && (!view->tty || tty_modes[selected] == 0)) {
         ImGui::Separator();
         ImGui::TextUnformatted("Send Input");
 

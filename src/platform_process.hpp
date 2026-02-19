@@ -7,7 +7,7 @@ class PlatformProcess {
  public:
   virtual ~PlatformProcess() = default;
 
-  virtual bool start(const std::string& command, bool tty, std::string* out_error) = 0;
+  virtual bool start(const std::string& command, const std::string& workdir, bool tty, std::string* out_error) = 0;
   virtual void stop() = 0;
   virtual bool is_running() = 0;
   virtual int exit_code() const = 0;

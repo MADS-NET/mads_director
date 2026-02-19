@@ -8,9 +8,12 @@
 - Required fields: `name`, `command`
 - Optional fields:
   - `after = "process_name"`: start this process only after another process has started
+  - `workdir = "path"`: run process in this working directory (default: `director` working directory)
+  - `enabled = <bool>`: include process but skip starting it when `false` (default: `true`)
   - `scale = <int>`: spawn N instances of this process
   - `relaunch = <bool>`: auto-restart on non-zero exit
   - `tty = <bool>`: run child under PTY and allow interactive `attach`/`detach`
+- If a process working directory contains `.venv`, it is exposed to launched Python commands.
 - Interactive UI:
   - select process
   - start, stop, restart
@@ -51,6 +54,8 @@ Use one top-level section per process. The section name is the process name:
 [api]
 command = "./my-service --port 9000"
 after = "db"
+workdir = "services/api"
+enabled = true
 scale = 2
 relaunch = true
 tty = false

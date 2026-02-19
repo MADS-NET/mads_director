@@ -21,13 +21,41 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <thread>
 
 namespace {
 
-[[noreturn]] void exec_child_command(const std::string& command) {
+void enable_python_venv_for_workdir(const std::string& workdir) {
+  if (workdir.empty()) {
+    return;
+  }
+
+  std::error_code ec;
+  const std::filesystem::path venv_root = std::filesystem::path(workdir) / ".venv";
+  const std::filesystem::path venv_bin = venv_root / "bin";
+  if (!std::filesystem::is_directory(venv_bin, ec)) {
+    return;
+  }
+
+  setenv("VIRTUAL_ENV", venv_root.string().c_str(), 1);
+  const char* path = std::getenv("PATH");
+  std::string new_path = venv_bin.string();
+  if (path != nullptr && path[0] != '\0') {
+    new_path += ":";
+    new_path += path;
+  }
+  setenv("PATH", new_path.c_str(), 1);
+}
+
+[[noreturn]] void exec_child_command(const std::string& command, const std::string& workdir) {
+  if (!workdir.empty()) {
+    (void)chdir(workdir.c_str());
+    enable_python_venv_for_workdir(workdir);
+  }
+
   const char* shell = std::getenv("SHELL");
   if (shell == nullptr || shell[0] == '\0') {
     shell = "/bin/sh";
@@ -56,7 +84,7 @@ class PosixProcess final : public PlatformProcess {
     close_fds();
   }
 
-  bool start(const std::string& command, bool tty, std::string* out_error) override {
+  bool start(const std::string& command, const std::string& workdir, bool tty, std::string* out_error) override {
     stop();
     close_fds();
 
@@ -74,7 +102,7 @@ class PosixProcess final : public PlatformProcess {
       }
 
       if (_pid == 0) {
-        exec_child_command(command);
+        exec_child_command(command, workdir);
       }
 
       _stdin_fd = _pty_master;
@@ -113,7 +141,7 @@ class PosixProcess final : public PlatformProcess {
       close_if_open(out_pipe[0]);
       close_if_open(out_pipe[1]);
 
-      exec_child_command(command);
+      exec_child_command(command, workdir);
     }
 
     _stdin_fd = in_pipe[1];

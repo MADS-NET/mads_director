@@ -4,6 +4,7 @@
 
 #include <windows.h>
 
+#include <filesystem>
 #include <memory>
 #include <string>
 
@@ -16,7 +17,7 @@ class WindowsProcess final : public PlatformProcess {
     close_handles();
   }
 
-  bool start(const std::string& command, bool tty, std::string* out_error) override {
+  bool start(const std::string& command, const std::string& workdir, bool tty, std::string* out_error) override {
     stop();
     close_handles();
 
@@ -64,9 +65,21 @@ class WindowsProcess final : public PlatformProcess {
     }
 
     PROCESS_INFORMATION info{};
-    std::string cmdline = "cmd.exe /S /C \"" + command + "\"";
+    std::string run_command = command;
 
-    if (!CreateProcessA(nullptr, cmdline.data(), nullptr, nullptr, TRUE, 0, nullptr, nullptr, &startup, &info)) {
+    if (!workdir.empty()) {
+      std::error_code ec;
+      const std::filesystem::path venv_activate =
+          std::filesystem::path(workdir) / ".venv" / "Scripts" / "activate.bat";
+      if (std::filesystem::exists(venv_activate, ec)) {
+        run_command = "call \"" + venv_activate.string() + "\" && " + run_command;
+      }
+    }
+
+    std::string cmdline = "cmd.exe /S /C \"" + run_command + "\"";
+
+    const char* current_dir = workdir.empty() ? nullptr : workdir.c_str();
+    if (!CreateProcessA(nullptr, cmdline.data(), nullptr, nullptr, TRUE, 0, nullptr, current_dir, &startup, &info)) {
       *out_error = "CreateProcess failed.";
       return false;
     }

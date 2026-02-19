@@ -1,14 +1,19 @@
 [db]
 command = "python3 -m http.server 8001"
+workdir = "."
 relaunch = true
 
 [api]
 command = "python3 -m http.server 8002"
 after = "db"
+workdir = "."
+enabled = true
 scale = 2
 relaunch = true
 
 [worker]
 command = "python3 -c \"import time; print('worker start'); time.sleep(1000)\""
 after = "api"
+workdir = "."
+enabled = false
 tty = true

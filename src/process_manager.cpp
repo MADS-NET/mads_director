@@ -7,6 +7,7 @@
 #include <cerrno>
 #include <ctime>
 #include <cstring>
+#include <filesystem>
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
@@ -61,6 +62,7 @@ std::string scaled_name(const std::string& base_name, int index, int scale) {
 struct ProcessManager::ManagedProcess {
   ProcessRuntimeView view;
   std::string command;
+  std::string workdir;
   std::unique_ptr<PlatformProcess> process;
   bool launched_by_scheduler = false;
   bool externally_attached = false;
@@ -76,6 +78,7 @@ ProcessManager::~ProcessManager() {
 
 bool ProcessManager::initialize(const DirectorConfig& config, std::string* out_error) {
   _processes.clear();
+  const std::filesystem::path base_workdir = std::filesystem::current_path();
 
   std::unordered_map<std::string, int> base_scale;
   std::unordered_map<std::string, std::optional<std::string>> base_after;
@@ -103,10 +106,17 @@ bool ProcessManager::initialize(const DirectorConfig& config, std::string* out_e
       ManagedProcess managed;
       managed.view.name = scaled_name(process.name, i, process.scale);
       managed.view.base_name = process.name;
+      managed.view.enabled = process.enabled;
       managed.view.relaunch = process.relaunch;
       managed.view.tty = process.tty;
       managed.view.command = process.command;
       managed.command = process.command;
+      if (process.workdir.has_value()) {
+        const std::filesystem::path candidate(*process.workdir);
+        managed.workdir = candidate.is_absolute() ? candidate.string() : (base_workdir / candidate).string();
+      } else {
+        managed.workdir = base_workdir.string();
+      }
       managed.process = create_platform_process();
 
       if (process.after.has_value()) {
@@ -127,6 +137,9 @@ void ProcessManager::launch_ready_processes() {
   std::string ignored_error;
   for (std::size_t i = 0; i < _processes.size(); ++i) {
     auto& process = _processes[i];
+    if (!process.view.enabled) {
+      continue;
+    }
     if (process.view.running || process.view.ever_started) {
       continue;
     }
@@ -204,6 +217,10 @@ bool ProcessManager::start_process(std::size_t index, std::string* out_error) {
   }
 
   auto& process = _processes[index];
+  if (!process.view.enabled) {
+    *out_error = "Process is disabled in config (enabled=false).";
+    return false;
+  }
   if (!can_start(process)) {
     *out_error = "Dependencies are not started yet.";
     return false;
@@ -219,6 +236,10 @@ bool ProcessManager::stop_process(std::size_t index, std::string* out_error) {
   }
 
   auto& process = _processes[index];
+  if (!process.view.enabled) {
+    *out_error = "Process is disabled in config (enabled=false).";
+    return false;
+  }
   if (!process.view.running) {
     *out_error = "Process is not running.";
     return false;
@@ -237,6 +258,10 @@ bool ProcessManager::restart_process(std::size_t index, std::string* out_error) 
   }
 
   auto& process = _processes[index];
+  if (!process.view.enabled) {
+    *out_error = "Process is disabled in config (enabled=false).";
+    return false;
+  }
   if (process.view.running) {
     process.process->stop();
     process.view.running = false;
@@ -252,6 +277,10 @@ bool ProcessManager::send_input(std::size_t index, const std::string& input, std
   }
 
   auto& process = _processes[index];
+  if (!process.view.enabled) {
+    *out_error = "Process is disabled in config (enabled=false).";
+    return false;
+  }
   if (!process.view.running) {
     *out_error = "Process is not running.";
     return false;
@@ -272,6 +301,10 @@ bool ProcessManager::attach_process(std::size_t index, std::string* out_error) {
   }
 
   auto& process = _processes[index];
+  if (!process.view.enabled) {
+    *out_error = "Process is disabled in config (enabled=false).";
+    return false;
+  }
   if (!process.view.running) {
     *out_error = "Process is not running.";
     return false;
@@ -309,6 +342,10 @@ bool ProcessManager::open_external_attach(std::size_t index, const std::string& 
   }
 
   auto& process = _processes[index];
+  if (!process.view.enabled) {
+    *out_error = "Process is disabled in config (enabled=false).";
+    return false;
+  }
   if (!process.view.running) {
     *out_error = "Process is not running.";
     return false;
@@ -396,7 +433,7 @@ bool ProcessManager::start_process_internal(std::size_t index, std::string* out_
   }
 
   std::string start_error;
-  if (!process.process->start(process.command, process.view.tty, &start_error)) {
+  if (!process.process->start(process.command, process.workdir, process.view.tty, &start_error)) {
     *out_error = "Failed to start '" + process.view.name + "': " + start_error;
     append_log(&process, *out_error);
     return false;
@@ -408,6 +445,7 @@ bool ProcessManager::start_process_internal(std::size_t index, std::string* out_
 
   append_log(&process, "Process started.");
   append_log(&process, "Command: " + process.command);
+  append_log(&process, "Working directory: " + process.workdir);
   if (process.view.tty) {
     append_log(&process, "TTY mode enabled. Use GUI attach controls. Detach with Ctrl-] in attached terminal.");
   }

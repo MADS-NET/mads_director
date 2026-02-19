@@ -29,6 +29,14 @@ bool parse_process(const std::string& section_name, const toml::table& table, Pr
     process.after = *after;
   }
 
+  if (const auto workdir = table["workdir"].value<std::string>(); workdir.has_value() && !workdir->empty()) {
+    process.workdir = *workdir;
+  }
+
+  if (const auto enabled = table["enabled"].value<bool>(); enabled.has_value()) {
+    process.enabled = *enabled;
+  }
+
   if (const auto scale = table["scale"].value<int64_t>(); scale.has_value()) {
     if (*scale < 1) {
       *out_error = "Process '" + process.name + "' has invalid 'scale'. Must be >= 1.";

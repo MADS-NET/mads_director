@@ -16,6 +16,7 @@ struct ProcessRuntimeView {
   bool running = false;
   bool ever_started = false;
   int exit_code = 0;
+  bool enabled = true;
   bool relaunch = false;
   bool tty = false;
   std::vector<std::string> dependencies;
