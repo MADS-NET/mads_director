@@ -38,7 +38,12 @@ jobs:
 
       - name: Configure (Unix)
         if: runner.os != 'Windows'
-        run: cmake -S . -B build -G Ninja
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            cmake -S . -B build -G Ninja -DGLFW_BUILD_WAYLAND=OFF -DGLFW_BUILD_X11=ON
+          else
+            cmake -S . -B build -G Ninja
+          fi
 
       - name: Build (Unix)
         if: runner.os != 'Windows'
