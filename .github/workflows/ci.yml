@@ -42,10 +42,12 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $out = & .\build\Release\director.exe --example
+          $out = (& .\build\Release\director.exe --example 2>&1 | Out-String)
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if ($out -notmatch "\[db\]" -or $out -notmatch "enabled = true") {
+          if (($out -notmatch "\[db\]") -or ($out -notmatch "enabled\s*=\s*true")) {
             Write-Error "Example output missing expected content"
+            Write-Host "Captured output:"
+            Write-Host $out
             exit 1
           }
 
