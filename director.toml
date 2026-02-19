@@ -13,4 +13,5 @@ command = "mads perf_assess -p 100"
 after = "broker"
 tty=true
 relaunch = true
+scale = 2
 

@@ -5,7 +5,7 @@
 ## Features
 
 - TOML-driven process definitions
-- Required fields: `name`, `command`
+- Required field per process section: `command` (the section name is the process name)
 - Optional fields:
   - `after = "process_name"`: start this process only after another process has started
   - `workdir = "path"`: run process in this working directory (default: `director` working directory)
@@ -67,4 +67,9 @@ tty = false
 
 Scaled processes are named as `name[1]`, `name[2]`, etc.
 
-Interactive `attach` is currently implemented for POSIX terminals (macOS/Linux).
+Scaling behavior:
+- `scale = 1` (default): a single process entry is created with the section name (for example `api`)
+- `scale = N` (`N > 1`): `N` entries are created (`api[1]` ... `api[N]`)
+- if a process has `after = "db"` and `db` is scaled, each dependent instance waits for all `db[...]` instances to be running
+
+Interactive external terminal attach is currently implemented for POSIX terminals (macOS/Linux).
