@@ -205,6 +205,9 @@ std::string compose_plain_log_text(const ProcessRuntimeView& view) {
 }  // namespace
 
 int GuiApp::run(ProcessManager* manager, const std::string& executable_path) {
+#ifdef _WIN32
+  (void)executable_path;
+#endif
   if (!glfwInit()) {
     return 1;
   }
@@ -341,6 +344,7 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path) {
       }
 
       if (view->tty && view->enabled) {
+#ifndef _WIN32
         ImGui::Separator();
         ImGui::TextUnformatted("TTY Interaction");
 
@@ -357,9 +361,14 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path) {
                               : error;
           }
         }
+#endif
       }
 
+#ifdef _WIN32
+      if (view->enabled) {
+#else
       if (view->enabled && (!view->tty || tty_modes[selected] == 0)) {
+#endif
         ImGui::Separator();
         ImGui::TextUnformatted("Send Input");
 
@@ -376,7 +385,14 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path) {
         ImGui::SameLine();
         if (ImGui::Button("Send")) {
           std::string error;
-          std::string payload = send_buffers[selected] + "\n";
+          std::string payload = send_buffers[selected];
+#ifdef _WIN32
+          if (!view->tty) {
+            payload += "\n";
+          }
+#else
+          payload += "\n";
+#endif
           status_line = manager->send_input(selected, payload, &error) ? "Input sent." : error;
         }
       }
