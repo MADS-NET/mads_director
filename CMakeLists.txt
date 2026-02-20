@@ -14,6 +14,16 @@ endif()
 
 include(FetchContent)
 
+if(UNIX AND NOT APPLE)
+  option(
+    DIRECTOR_ENABLE_WAYLAND
+    "Enable GLFW Wayland backend (requires wayland-scanner and Wayland development packages)."
+    OFF
+  )
+  set(GLFW_BUILD_X11 ON CACHE BOOL "Build GLFW with X11 backend" FORCE)
+  set(GLFW_BUILD_WAYLAND ${DIRECTOR_ENABLE_WAYLAND} CACHE BOOL "Build GLFW with Wayland backend" FORCE)
+endif()
+
 FetchContent_Declare(
   tomlplusplus
   GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git

@@ -80,6 +80,10 @@ ProcessManager::~ProcessManager() {
 
 bool ProcessManager::initialize(const DirectorConfig& config, std::string* out_error) {
   _processes.clear();
+  _terminal_command.reset();
+  if (config.terminal.has_value() && !config.terminal->empty()) {
+    _terminal_command = config.terminal;
+  }
   const std::filesystem::path base_workdir = std::filesystem::current_path();
 
   std::unordered_map<std::string, int> base_scale;
@@ -367,7 +371,7 @@ bool ProcessManager::open_external_attach(std::size_t index, const std::string& 
     return false;
   }
 
-  if (!launch_attach_terminal(executable_path, pipe_name, out_error)) {
+  if (!launch_attach_terminal(executable_path, pipe_name, _terminal_command, out_error)) {
     CloseHandle(pipe);
     return false;
   }
@@ -442,7 +446,7 @@ bool ProcessManager::open_external_attach(std::size_t index, const std::string& 
     fcntl(listen_fd, F_SETFL, flags | O_NONBLOCK);
   }
 
-  if (!launch_attach_terminal(executable_path, socket_path, out_error)) {
+  if (!launch_attach_terminal(executable_path, socket_path, _terminal_command, out_error)) {
     close(listen_fd);
     unlink(socket_path.c_str());
     return false;

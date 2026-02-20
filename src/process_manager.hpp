@@ -76,4 +76,5 @@ class ProcessManager {
 
   std::vector<ManagedProcess> _processes;
   ExternalAttachSession _external_attach;
+  std::optional<std::string> _terminal_command;
 };

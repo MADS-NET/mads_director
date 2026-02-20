@@ -7,6 +7,25 @@
 
 namespace {
 
+bool parse_director(const toml::table& table, DirectorConfig* out_config, std::string* out_error) {
+  const toml::node* terminal_node = table.get("terminal");
+  if (terminal_node == nullptr) {
+    return true;
+  }
+
+  const auto terminal = terminal_node->value<std::string>();
+  if (!terminal.has_value()) {
+    *out_error = "Section '[director]' key 'terminal' must be a string.";
+    return false;
+  }
+
+  if (!terminal->empty()) {
+    out_config->terminal = *terminal;
+  }
+
+  return true;
+}
+
 bool parse_process(const std::string& section_name, const toml::table& table, ProcessSpec* out_process,
                    std::string* out_error) {
   const auto command = table["command"].value<std::string>();
@@ -76,6 +95,13 @@ bool load_config(const std::string& path, DirectorConfig* out_config, std::strin
 
       ProcessSpec process;
       const std::string process_name = std::string(key.str());
+      if (process_name == "director") {
+        if (!parse_director(*table, &config, out_error)) {
+          return false;
+        }
+        continue;
+      }
+
       if (!parse_process(process_name, *table, &process, out_error)) {
         return false;
       }

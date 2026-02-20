@@ -5,6 +5,7 @@
 ## Features
 
 - TOML-driven process definitions
+- Optional global `[director]` settings
 - Required field per process section: `command` (the section name is the process name)
 - Optional fields:
   - `after = "process_name"`: start this process only after another process has started
@@ -52,6 +53,13 @@ Executable naming:
 
 ## Config format
 
+Optional global settings:
+
+```toml
+[director]
+terminal = "gnome-terminal" # optional: terminal executable for detached attach windows (recommended on Linux)
+```
+
 Use one top-level section per process. The section name is the process name:
 
 ```toml
@@ -73,3 +81,5 @@ Scaling behavior:
 - if a process has `after = "db"` and `db` is scaled, each dependent instance waits for all `db[...]` instances to be running
 
 Interactive external terminal attach is currently implemented for POSIX terminals (macOS/Linux).
+
+On Linux, setting `[director].terminal = "gnome-terminal"` is recommended.

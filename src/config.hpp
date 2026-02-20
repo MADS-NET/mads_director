@@ -16,6 +16,7 @@ struct ProcessSpec {
 };
 
 struct DirectorConfig {
+  std::optional<std::string> terminal;
   std::vector<ProcessSpec> processes;
 };
 

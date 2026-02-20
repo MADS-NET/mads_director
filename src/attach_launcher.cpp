@@ -92,7 +92,8 @@ std::string base64_encode(const std::vector<std::uint8_t>& bytes) {
 
 }  // namespace
 
-bool launch_attach_terminal(const std::string& executable_path, const std::string& socket_path, std::string* out_error) {
+bool launch_attach_terminal(const std::string& executable_path, const std::string& socket_path,
+                            const std::optional<std::string>& terminal_command, std::string* out_error) {
 #ifdef _WIN32
   const std::string command = "& " + powershell_single_quote(executable_path) + " --attach-socket " +
                               powershell_single_quote(socket_path);
@@ -140,12 +141,20 @@ bool launch_attach_terminal(const std::string& executable_path, const std::strin
 #else
   const std::string command = shell_single_quote(executable_path) + " --attach-socket " + shell_single_quote(socket_path);
   const std::string wrapped = "sh -lc " + shell_single_quote(command);
-  const std::vector<std::string> candidates = {
-      "x-terminal-emulator -e " + wrapped,
-      "gnome-terminal -- " + wrapped,
-      "konsole -e " + wrapped,
-      "xterm -e " + wrapped,
-  };
+
+  std::vector<std::string> candidates;
+  if (terminal_command.has_value() && !terminal_command->empty()) {
+    const std::string terminal = shell_single_quote(*terminal_command);
+    candidates.push_back(terminal + " -e " + wrapped);
+    candidates.push_back(terminal + " -- " + wrapped);
+  } else {
+    candidates = {
+        "x-terminal-emulator -e " + wrapped,
+        "gnome-terminal -- " + wrapped,
+        "konsole -e " + wrapped,
+        "xterm -e " + wrapped,
+    };
+  }
 
   for (const auto& candidate : candidates) {
     if (std::system(candidate.c_str()) == 0) {
@@ -153,7 +162,11 @@ bool launch_attach_terminal(const std::string& executable_path, const std::strin
     }
   }
 
-  *out_error = "Failed to open terminal window for attach.";
+  if (terminal_command.has_value() && !terminal_command->empty()) {
+    *out_error = "Failed to open configured terminal for attach. Check [director].terminal.";
+  } else {
+    *out_error = "Failed to open terminal window for attach.";
+  }
   return false;
 #endif
 }

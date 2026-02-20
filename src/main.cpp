@@ -13,8 +13,11 @@ void print_example_config() {
   std::cout
       << "# director example configuration\n"
       << "# Notes:\n"
+      << "# - [director] is optional global settings.\n"
       << "# - Each top-level section name is the process name (mandatory).\n"
       << "# - All options are shown below with defaults and purpose.\n\n"
+      << "[director] # optional: global director settings\n"
+      << "terminal = \"\" # optional, default=\"\": terminal executable for detached attach windows\n\n"
       << "[db] # process section name (mandatory)\n"
       << "command = \"./bin/db --port 5432\" # mandatory: command line to execute\n"
       << "after = \"\" # optional, default=\"\": start after this process name\n"
