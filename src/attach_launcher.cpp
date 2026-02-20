@@ -95,6 +95,7 @@ std::string base64_encode(const std::vector<std::uint8_t>& bytes) {
 bool launch_attach_terminal(const std::string& executable_path, const std::string& socket_path,
                             const std::optional<std::string>& terminal_command, std::string* out_error) {
 #ifdef _WIN32
+  (void)terminal_command;
   const std::string command = "& " + powershell_single_quote(executable_path) + " --attach-socket " +
                               powershell_single_quote(socket_path);
   const int wide_size = MultiByteToWideChar(CP_UTF8, 0, command.c_str(), -1, nullptr, 0);
@@ -127,6 +128,7 @@ bool launch_attach_terminal(const std::string& executable_path, const std::strin
   }
   return true;
 #elif defined(__APPLE__)
+  (void)terminal_command;
   const std::string command = shell_single_quote(executable_path) + " --attach-socket " + shell_single_quote(socket_path);
   const std::string escaped = applescript_escape(command);
   std::string osascript = "osascript -e \"tell application \\\"Terminal\\\" to activate\" "
