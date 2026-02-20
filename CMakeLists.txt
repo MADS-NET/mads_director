@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 project(director LANGUAGES CXX)
+include(GNUInstallDirs)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -10,6 +11,21 @@ if(MADS_CMD_PREFIX STREQUAL "")
   set(DIRECTOR_EXE_NAME "director")
 else()
   set(DIRECTOR_EXE_NAME "${MADS_CMD_PREFIX}-director")
+endif()
+
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+  execute_process(
+    COMMAND mads -p
+    OUTPUT_VARIABLE MADS_INSTALL_PREFIX
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE MADS_INSTALL_PREFIX_RESULT
+  )
+
+  if(MADS_INSTALL_PREFIX_RESULT EQUAL 0 AND NOT MADS_INSTALL_PREFIX STREQUAL "")
+    set(CMAKE_INSTALL_PREFIX "${MADS_INSTALL_PREFIX}" CACHE PATH "Install path prefix." FORCE)
+  else()
+    message(WARNING "Could not determine install prefix from 'mads -p'; using default CMAKE_INSTALL_PREFIX='${CMAKE_INSTALL_PREFIX}'.")
+  endif()
 endif()
 
 include(FetchContent)
@@ -91,3 +107,7 @@ else()
   target_compile_options(${DIRECTOR_EXE_NAME} PRIVATE -Wall -Wextra -Wpedantic)
   target_compile_definitions(${DIRECTOR_EXE_NAME} PRIVATE GL_SILENCE_DEPRECATION)
 endif()
+
+install(TARGETS ${DIRECTOR_EXE_NAME}
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
