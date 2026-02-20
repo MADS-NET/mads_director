@@ -2,6 +2,7 @@
 
 #include "config.hpp"
 
+#include <cstdint>
 #include <deque>
 #include <optional>
 #include <string>
@@ -54,8 +55,13 @@ class ProcessManager {
   struct ManagedProcess;
   struct ExternalAttachSession {
     std::size_t process_index = 0;
+#ifdef _WIN32
+    std::uintptr_t listen_handle = 0;
+    std::uintptr_t client_handle = 0;
+#else
     int listen_fd = -1;
     int client_fd = -1;
+#endif
     std::string socket_path;
     bool active = false;
   };

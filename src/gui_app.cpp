@@ -344,7 +344,6 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path) {
       }
 
       if (view->tty && view->enabled) {
-#ifndef _WIN32
         ImGui::Separator();
         ImGui::TextUnformatted("TTY Interaction");
 
@@ -361,14 +360,9 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path) {
                               : error;
           }
         }
-#endif
       }
 
-#ifdef _WIN32
-      if (view->enabled) {
-#else
       if (view->enabled && (!view->tty || tty_modes[selected] == 0)) {
-#endif
         ImGui::Separator();
         ImGui::TextUnformatted("Send Input");
 

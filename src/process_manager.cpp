@@ -12,7 +12,9 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#ifndef _WIN32
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -331,10 +333,53 @@ bool ProcessManager::attach_process(std::size_t index, std::string* out_error) {
 
 bool ProcessManager::open_external_attach(std::size_t index, const std::string& executable_path, std::string* out_error) {
 #ifdef _WIN32
-  (void)index;
-  (void)executable_path;
-  *out_error = "External attach is currently implemented only on POSIX.";
-  return false;
+  if (index >= _processes.size()) {
+    *out_error = "Invalid process index.";
+    return false;
+  }
+
+  if (_external_attach.active) {
+    *out_error = "An external attach session is already active.";
+    return false;
+  }
+
+  auto& process = _processes[index];
+  if (!process.view.enabled) {
+    *out_error = "Process is disabled in config (enabled=false).";
+    return false;
+  }
+  if (!process.view.running) {
+    *out_error = "Process is not running.";
+    return false;
+  }
+  if (!process.view.tty) {
+    *out_error = "External attach is only available for tty=true processes.";
+    return false;
+  }
+
+  const std::string pipe_name = "\\\\.\\pipe\\director_attach_" + std::to_string(GetCurrentProcessId()) + "_" +
+                                std::to_string(index) + "_" +
+                                std::to_string(static_cast<unsigned long long>(time(nullptr)));
+  const HANDLE pipe = CreateNamedPipeA(pipe_name.c_str(), PIPE_ACCESS_DUPLEX,
+                                       PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_NOWAIT, 1, 4096, 4096, 0, nullptr);
+  if (pipe == INVALID_HANDLE_VALUE) {
+    *out_error = "CreateNamedPipe failed.";
+    return false;
+  }
+
+  if (!launch_attach_terminal(executable_path, pipe_name, out_error)) {
+    CloseHandle(pipe);
+    return false;
+  }
+
+  _external_attach.active = true;
+  _external_attach.process_index = index;
+  _external_attach.listen_handle = reinterpret_cast<std::uintptr_t>(pipe);
+  _external_attach.client_handle = 0;
+  _external_attach.socket_path = pipe_name;
+
+  append_log(&process, "Waiting for external attach client...");
+  return true;
 #else
   if (index >= _processes.size()) {
     *out_error = "Invalid process index.";
@@ -498,7 +543,79 @@ void ProcessManager::append_log(ManagedProcess* process, const std::string& text
 
 void ProcessManager::poll_external_attach() {
 #ifdef _WIN32
-  return;
+  if (!_external_attach.active) {
+    return;
+  }
+
+  if (_external_attach.process_index >= _processes.size()) {
+    close_external_attach("External attach session closed.");
+    return;
+  }
+
+  auto& process = _processes[_external_attach.process_index];
+  if (!process.view.running) {
+    close_external_attach("Target process exited.");
+    return;
+  }
+
+  const HANDLE pipe = reinterpret_cast<HANDLE>(_external_attach.listen_handle);
+  if (pipe == nullptr || pipe == INVALID_HANDLE_VALUE) {
+    close_external_attach("External attach session closed.");
+    return;
+  }
+
+  if (_external_attach.client_handle == 0) {
+    if (ConnectNamedPipe(pipe, nullptr)) {
+      _external_attach.client_handle = _external_attach.listen_handle;
+      process.externally_attached = true;
+      append_log(&process, "External attach connected.");
+    } else {
+      const DWORD error = GetLastError();
+      if (error == ERROR_PIPE_CONNECTED) {
+        _external_attach.client_handle = _external_attach.listen_handle;
+        process.externally_attached = true;
+        append_log(&process, "External attach connected.");
+      } else if (error != ERROR_PIPE_LISTENING && error != ERROR_NO_DATA) {
+        close_external_attach("External attach disconnected.");
+      }
+    }
+  }
+
+  if (_external_attach.client_handle == 0) {
+    return;
+  }
+
+  std::string chunk;
+  while (process.process->read_available(&chunk)) {
+    append_log(&process, chunk);
+    DWORD written = 0;
+    if (!WriteFile(pipe, chunk.data(), static_cast<DWORD>(chunk.size()), &written, nullptr)) {
+      close_external_attach("External attach disconnected.");
+      return;
+    }
+    chunk.clear();
+  }
+
+  DWORD available = 0;
+  if (!PeekNamedPipe(pipe, nullptr, 0, nullptr, &available, nullptr)) {
+    close_external_attach("External attach disconnected.");
+    return;
+  }
+  if (available == 0) {
+    return;
+  }
+
+  char input[512];
+  DWORD to_read = available > sizeof(input) ? static_cast<DWORD>(sizeof(input)) : available;
+  DWORD bytes_read = 0;
+  if (!ReadFile(pipe, input, to_read, &bytes_read, nullptr) || bytes_read == 0) {
+    close_external_attach("External attach disconnected.");
+    return;
+  }
+
+  std::string payload(input, input + bytes_read);
+  std::string ignored;
+  (void)send_input(_external_attach.process_index, payload, &ignored);
 #else
   if (!_external_attach.active) {
     return;
@@ -561,8 +678,27 @@ void ProcessManager::poll_external_attach() {
 
 void ProcessManager::close_external_attach(const std::string& reason) {
 #ifdef _WIN32
-  (void)reason;
-  return;
+  if (!_external_attach.active) {
+    return;
+  }
+
+  if (_external_attach.process_index < _processes.size()) {
+    auto& process = _processes[_external_attach.process_index];
+    process.externally_attached = false;
+    if (!reason.empty()) {
+      append_log(&process, reason);
+    }
+  }
+
+  const HANDLE pipe = reinterpret_cast<HANDLE>(_external_attach.listen_handle);
+  if (pipe != nullptr && pipe != INVALID_HANDLE_VALUE) {
+    if (_external_attach.client_handle != 0) {
+      (void)DisconnectNamedPipe(pipe);
+    }
+    CloseHandle(pipe);
+  }
+
+  _external_attach = ExternalAttachSession{};
 #else
   if (!_external_attach.active) {
     return;

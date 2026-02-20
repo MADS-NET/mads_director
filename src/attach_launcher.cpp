@@ -4,6 +4,11 @@
 #include <string>
 #include <vector>
 
+#ifdef _WIN32
+#include <windows.h>
+#include <cstdint>
+#endif
+
 namespace {
 
 std::string shell_single_quote(const std::string& input) {
@@ -34,14 +39,92 @@ std::string applescript_escape(const std::string& input) {
   return out;
 }
 
+#ifdef _WIN32
+std::string powershell_single_quote(const std::string& input) {
+  std::string quoted = "'";
+  for (char ch : input) {
+    if (ch == '\'') {
+      quoted += "''";
+    } else {
+      quoted.push_back(ch);
+    }
+  }
+  quoted += "'";
+  return quoted;
+}
+
+std::string base64_encode(const std::vector<std::uint8_t>& bytes) {
+  static constexpr char kTable[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::string out;
+  out.reserve(((bytes.size() + 2) / 3) * 4);
+
+  std::size_t i = 0;
+  while (i + 3 <= bytes.size()) {
+    const std::uint32_t v = (static_cast<std::uint32_t>(bytes[i]) << 16) |
+                            (static_cast<std::uint32_t>(bytes[i + 1]) << 8) |
+                            static_cast<std::uint32_t>(bytes[i + 2]);
+    out.push_back(kTable[(v >> 18) & 0x3f]);
+    out.push_back(kTable[(v >> 12) & 0x3f]);
+    out.push_back(kTable[(v >> 6) & 0x3f]);
+    out.push_back(kTable[v & 0x3f]);
+    i += 3;
+  }
+
+  const std::size_t rem = bytes.size() - i;
+  if (rem == 1) {
+    const std::uint32_t v = static_cast<std::uint32_t>(bytes[i]) << 16;
+    out.push_back(kTable[(v >> 18) & 0x3f]);
+    out.push_back(kTable[(v >> 12) & 0x3f]);
+    out.push_back('=');
+    out.push_back('=');
+  } else if (rem == 2) {
+    const std::uint32_t v =
+        (static_cast<std::uint32_t>(bytes[i]) << 16) | (static_cast<std::uint32_t>(bytes[i + 1]) << 8);
+    out.push_back(kTable[(v >> 18) & 0x3f]);
+    out.push_back(kTable[(v >> 12) & 0x3f]);
+    out.push_back(kTable[(v >> 6) & 0x3f]);
+    out.push_back('=');
+  }
+
+  return out;
+}
+#endif
+
 }  // namespace
 
 bool launch_attach_terminal(const std::string& executable_path, const std::string& socket_path, std::string* out_error) {
 #ifdef _WIN32
-  (void)executable_path;
-  (void)socket_path;
-  *out_error = "External attach terminal is currently implemented only on POSIX.";
-  return false;
+  const std::string command = "& " + powershell_single_quote(executable_path) + " --attach-socket " +
+                              powershell_single_quote(socket_path);
+  const int wide_size = MultiByteToWideChar(CP_UTF8, 0, command.c_str(), -1, nullptr, 0);
+  if (wide_size <= 1) {
+    *out_error = "Failed to encode attach command for PowerShell.";
+    return false;
+  }
+
+  std::vector<wchar_t> wide(static_cast<std::size_t>(wide_size));
+  if (MultiByteToWideChar(CP_UTF8, 0, command.c_str(), -1, wide.data(), wide_size) == 0) {
+    *out_error = "Failed to encode attach command for PowerShell.";
+    return false;
+  }
+
+  std::vector<std::uint8_t> utf16le;
+  utf16le.reserve((wide.size() - 1) * 2);
+  for (std::size_t i = 0; i + 1 < wide.size(); ++i) {
+    const std::uint16_t code = static_cast<std::uint16_t>(wide[i]);
+    utf16le.push_back(static_cast<std::uint8_t>(code & 0xff));
+    utf16le.push_back(static_cast<std::uint8_t>((code >> 8) & 0xff));
+  }
+
+  const std::string encoded = base64_encode(utf16le);
+  const std::string args = "-NoLogo -NoProfile -NoExit -EncodedCommand " + encoded;
+  const HINSTANCE result =
+      ShellExecuteA(nullptr, "open", "powershell.exe", args.c_str(), nullptr, SW_SHOWNORMAL);
+  if (reinterpret_cast<std::intptr_t>(result) <= 32) {
+    *out_error = "Failed to open PowerShell for attach.";
+    return false;
+  }
+  return true;
 #elif defined(__APPLE__)
   const std::string command = shell_single_quote(executable_path) + " --attach-socket " + shell_single_quote(socket_path);
   const std::string escaped = applescript_escape(command);
