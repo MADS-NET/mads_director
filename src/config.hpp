@@ -17,6 +17,7 @@ struct ProcessSpec {
 
 struct DirectorConfig {
   std::optional<std::string> terminal;
+  double sample_rate_seconds = 2.0;
   std::vector<ProcessSpec> processes;
 };
 

@@ -24,6 +24,11 @@ struct ProcessRuntimeView {
   std::vector<std::string> dependencies;
   std::deque<std::string> logs;
   std::string live_line;
+  double cpu_percent_per_core = 0.0;
+  std::uint32_t thread_count = 0;
+  std::uint64_t ram_bytes = 0;
+  std::uint32_t cpu_count = 1;
+  std::vector<float> cpu_percent_per_core_history;
 };
 
 class ProcessManager {
@@ -47,6 +52,7 @@ class ProcessManager {
   bool start_process(std::size_t index, std::string* out_error);
   bool stop_process(std::size_t index, std::string* out_error);
   bool restart_process(std::size_t index, std::string* out_error);
+  bool send_siginfo(std::size_t index, std::string* out_error);
   bool send_input(std::size_t index, const std::string& input, std::string* out_error);
   bool attach_process(std::size_t index, std::string* out_error);
   bool open_external_attach(std::size_t index, const std::string& executable_path, std::string* out_error);
@@ -68,6 +74,8 @@ class ProcessManager {
 
   bool can_start(const ManagedProcess& process) const;
   bool start_process_internal(std::size_t index, std::string* out_error);
+  void sample_metrics_if_due();
+  void sample_process_metrics(ManagedProcess* process);
   void capture_output(ManagedProcess* process);
   void append_log(ManagedProcess* process, const std::string& text);
   void poll_external_attach();
@@ -77,4 +85,6 @@ class ProcessManager {
   std::vector<ManagedProcess> _processes;
   ExternalAttachSession _external_attach;
   std::optional<std::string> _terminal_command;
+  double _sample_rate_seconds = 2.0;
+  std::uint64_t _last_sample_tick_ms = 0;
 };

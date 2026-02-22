@@ -1,3 +1,6 @@
+[director]
+sample_rate = 2.0
+
 [broker]
 command = "mads broker"
 relaunch = true
@@ -15,3 +18,7 @@ tty=true
 relaunch = true
 scale = 2
 
+[rerunner]
+after = "broker"
+command = "mads sink build/rerunner.plugin"
+workdir = "/Users/p4010/Develop/MADS_plugins/rerunner_plugin"

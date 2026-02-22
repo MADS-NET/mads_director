@@ -1,13 +1,16 @@
 #include "process_manager.hpp"
 
 #include "attach_launcher.hpp"
+#include "pm.hpp"
 #include "platform_process.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cerrno>
 #include <ctime>
 #include <cstring>
 #include <filesystem>
+#include <memory>
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
@@ -15,6 +18,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
+#include <signal.h>
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -24,6 +28,7 @@
 namespace {
 
 constexpr std::size_t kMaxLogLines = 600;
+constexpr std::size_t kCpuHistorySamples = 48;
 
 bool detect_cycle_dfs(const std::string& node, const std::unordered_map<std::string, std::vector<std::string>>& graph,
                       std::unordered_set<std::string>* visiting, std::unordered_set<std::string>* visited) {
@@ -66,6 +71,7 @@ struct ProcessManager::ManagedProcess {
   std::string command;
   std::string workdir;
   std::unique_ptr<PlatformProcess> process;
+  std::unique_ptr<mads::process_metrics> metrics;
   bool launched_by_scheduler = false;
   bool externally_attached = false;
   std::string pending_line;
@@ -81,6 +87,8 @@ ProcessManager::~ProcessManager() {
 bool ProcessManager::initialize(const DirectorConfig& config, std::string* out_error) {
   _processes.clear();
   _terminal_command.reset();
+  _sample_rate_seconds = config.sample_rate_seconds;
+  _last_sample_tick_ms = 0;
   if (config.terminal.has_value() && !config.terminal->empty()) {
     _terminal_command = config.terminal;
   }
@@ -180,6 +188,10 @@ void ProcessManager::tick() {
     process.view.running = false;
     process.view.pid = -1;
     process.view.exit_code = process.process->exit_code();
+    process.metrics.reset();
+    process.view.cpu_percent_per_core = 0.0;
+    process.view.thread_count = 0;
+    process.view.ram_bytes = 0;
 
     std::ostringstream line;
     line << "Process exited with status " << process.view.exit_code << ".";
@@ -193,6 +205,8 @@ void ProcessManager::tick() {
       }
     }
   }
+
+  sample_metrics_if_due();
 }
 
 void ProcessManager::stop_all() {
@@ -205,6 +219,10 @@ void ProcessManager::stop_all() {
     process.process->stop();
     process.view.running = false;
     process.view.pid = -1;
+    process.metrics.reset();
+    process.view.cpu_percent_per_core = 0.0;
+    process.view.thread_count = 0;
+    process.view.ram_bytes = 0;
   }
 }
 
@@ -279,6 +297,42 @@ bool ProcessManager::restart_process(std::size_t index, std::string* out_error) 
   }
 
   return start_process_internal(index, out_error);
+}
+
+bool ProcessManager::send_siginfo(std::size_t index, std::string* out_error) {
+  if (index >= _processes.size()) {
+    *out_error = "Invalid process index.";
+    return false;
+  }
+
+  auto& process = _processes[index];
+  if (!process.view.enabled) {
+    *out_error = "Process is disabled in config (enabled=false).";
+    return false;
+  }
+  if (!process.view.running || process.view.pid <= 0) {
+    *out_error = "Process is not running.";
+    return false;
+  }
+
+#ifdef _WIN32
+  (void)process;
+  *out_error = "SIGINFO is not available on Windows.";
+  return false;
+#else
+#ifdef SIGINFO
+  if (kill(static_cast<pid_t>(process.view.pid), SIGINFO) != 0) {
+    *out_error = std::string("Failed to send SIGINFO: ") + std::strerror(errno);
+    return false;
+  }
+
+  append_log(&process, "SIGINFO sent.");
+  return true;
+#else
+  *out_error = "SIGINFO is not supported on this platform.";
+  return false;
+#endif
+#endif
 }
 
 bool ProcessManager::send_input(std::size_t index, const std::string& input, std::string* out_error) {
@@ -497,6 +551,19 @@ bool ProcessManager::start_process_internal(std::size_t index, std::string* out_
   process.view.ever_started = true;
   process.view.pid = process.process->process_id();
   process.view.exit_code = 0;
+  process.view.cpu_percent_per_core = 0.0;
+  process.view.thread_count = 0;
+  process.view.ram_bytes = 0;
+  process.view.cpu_percent_per_core_history.clear();
+  if (process.view.pid > 0) {
+    process.metrics = std::make_unique<mads::process_metrics>(
+        static_cast<mads::process_metrics::pid_type>(process.view.pid));
+    process.view.cpu_count = process.metrics->cpu_count();
+    process.metrics->sample();
+  } else {
+    process.metrics.reset();
+    process.view.cpu_count = 1;
+  }
 
   append_log(&process, "Process started.");
   append_log(&process, "Command: " + process.command);
@@ -506,6 +573,61 @@ bool ProcessManager::start_process_internal(std::size_t index, std::string* out_
   }
 
   return true;
+}
+
+void ProcessManager::sample_metrics_if_due() {
+  if (_processes.empty()) {
+    return;
+  }
+
+  const auto now = std::chrono::steady_clock::now().time_since_epoch();
+  const auto now_ms = static_cast<std::uint64_t>(
+      std::chrono::duration_cast<std::chrono::milliseconds>(now).count());
+  const auto period_ms = static_cast<std::uint64_t>(_sample_rate_seconds * 1000.0);
+  const std::uint64_t clamped_period_ms = std::max<std::uint64_t>(1, period_ms);
+
+  if (_last_sample_tick_ms != 0 && now_ms - _last_sample_tick_ms < clamped_period_ms) {
+    return;
+  }
+  _last_sample_tick_ms = now_ms;
+
+  for (auto& process : _processes) {
+    sample_process_metrics(&process);
+  }
+}
+
+void ProcessManager::sample_process_metrics(ManagedProcess* process) {
+  if (!process->view.running || process->view.pid <= 0) {
+    process->metrics.reset();
+    process->view.cpu_percent_per_core = 0.0;
+    process->view.thread_count = 0;
+    process->view.ram_bytes = 0;
+    if (process->view.cpu_percent_per_core_history.empty() ||
+        process->view.cpu_percent_per_core_history.back() != 0.0f) {
+      process->view.cpu_percent_per_core_history.push_back(0.0f);
+    }
+    if (process->view.cpu_percent_per_core_history.size() > kCpuHistorySamples) {
+      process->view.cpu_percent_per_core_history.erase(process->view.cpu_percent_per_core_history.begin());
+    }
+    return;
+  }
+
+  const auto pid = static_cast<mads::process_metrics::pid_type>(process->view.pid);
+  if (process->metrics == nullptr || process->metrics->pid() != pid) {
+    process->metrics = std::make_unique<mads::process_metrics>(pid);
+    process->view.cpu_count = process->metrics->cpu_count();
+    process->metrics->sample();
+  }
+
+  process->metrics->sample();
+  process->view.cpu_percent_per_core = process->metrics->cpu_percent_per_core();
+  process->view.thread_count = process->metrics->thread_count();
+  process->view.ram_bytes = process->metrics->ram_bytes();
+  process->view.cpu_count = process->metrics->cpu_count();
+  process->view.cpu_percent_per_core_history.push_back(static_cast<float>(process->view.cpu_percent_per_core));
+  if (process->view.cpu_percent_per_core_history.size() > kCpuHistorySamples) {
+    process->view.cpu_percent_per_core_history.erase(process->view.cpu_percent_per_core_history.begin());
+  }
 }
 
 void ProcessManager::capture_output(ManagedProcess* process) {

@@ -58,6 +58,7 @@ Optional global settings:
 ```toml
 [director]
 terminal = "gnome-terminal" # optional: terminal executable for detached attach windows (recommended on Linux)
+sample_rate = 2.0 # optional: process metrics sampling period in seconds (fractions allowed)
 ```
 
 Use one top-level section per process. The section name is the process name:

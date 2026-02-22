@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -31,6 +32,31 @@ std::string runtime_label(const ProcessRuntimeView& view) {
     return "pending";
   }
   return "exited(" + std::to_string(view.exit_code) + ")";
+}
+
+std::string process_list_label(const ProcessRuntimeView& view) {
+  if (view.pid > 0) {
+    return view.name + "  [pid " + std::to_string(view.pid) + "]";
+  }
+  return view.name + "  [pid -]";
+}
+
+std::string format_bytes(std::uint64_t bytes) {
+  static const char* kUnits[] = {"B", "KiB", "MiB", "GiB", "TiB"};
+  double value = static_cast<double>(bytes);
+  int unit = 0;
+  while (value >= 1024.0 && unit < 4) {
+    value /= 1024.0;
+    ++unit;
+  }
+
+  char buffer[64];
+  if (unit == 0) {
+    std::snprintf(buffer, sizeof(buffer), "%.0f %s", value, kUnits[unit]);
+  } else {
+    std::snprintf(buffer, sizeof(buffer), "%.2f %s", value, kUnits[unit]);
+  }
+  return std::string(buffer);
 }
 
 std::size_t clamp_selected(ProcessManager* manager, std::size_t selected) {
@@ -248,9 +274,14 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path) {
   std::vector<std::string> send_buffers;
   std::vector<int> tty_modes;
   bool auto_scroll = true;
+  bool shutdown_notice_shown = false;
 
   while (!glfwWindowShouldClose(window)) {
     glfwPollEvents();
+    if (glfwWindowShouldClose(window) && !shutdown_notice_shown) {
+      status_line = "Waiting for all processes to exit before closing Director";
+      shutdown_notice_shown = true;
+    }
 
     manager->tick();
     manager->launch_ready_processes();
@@ -283,17 +314,41 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path) {
     ImGui::TextUnformatted("Processes");
     ImGui::Separator();
 
-    for (std::size_t i = 0; i < manager->process_count(); ++i) {
-      const auto* view = manager->process_at(i);
-      if (view == nullptr) {
-        continue;
-      }
+    if (ImGui::BeginTable("process_table", 2,
+                          ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchSame)) {
+      ImGui::TableSetupColumn("Process", ImGuiTableColumnFlags_WidthStretch, 0.68f);
+      ImGui::TableSetupColumn("CPU", ImGuiTableColumnFlags_WidthStretch, 0.32f);
 
-      const bool is_selected = (i == selected);
-      const std::string label = view->name + "  [" + runtime_label(*view) + "]";
-      if (ImGui::Selectable(label.c_str(), is_selected)) {
-        selected = i;
+      for (std::size_t i = 0; i < manager->process_count(); ++i) {
+        const auto* view = manager->process_at(i);
+        if (view == nullptr) {
+          continue;
+        }
+
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        const bool is_selected = (i == selected);
+        const std::string label = process_list_label(*view);
+        if (ImGui::Selectable(label.c_str(), is_selected)) {
+          selected = i;
+        }
+        ImGui::TextDisabled("%s", runtime_label(*view).c_str());
+
+        ImGui::TableSetColumnIndex(1);
+        ImGui::PushID(static_cast<int>(i));
+        const float max_cpu = std::max(100.0f, static_cast<float>(view->cpu_count) * 100.0f);
+        if (view->cpu_percent_per_core_history.empty()) {
+          float zero = 0.0f;
+          ImGui::PlotLines("##cpu_sparkline", &zero, 1, 0, nullptr, 0.0f, max_cpu, ImVec2(-1.0f, 36.0f));
+        } else {
+          ImGui::PlotLines("##cpu_sparkline", view->cpu_percent_per_core_history.data(),
+                           static_cast<int>(view->cpu_percent_per_core_history.size()), 0, nullptr, 0.0f, max_cpu,
+                           ImVec2(-1.0f, 36.0f));
+        }
+        ImGui::Text("%.1f%%/core", view->cpu_percent_per_core);
+        ImGui::PopID();
       }
+      ImGui::EndTable();
     }
 
     ImGui::NextColumn();
@@ -303,6 +358,9 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path) {
       ImGui::Text("Selected: %s", view->name.c_str());
       ImGui::Text("State: %s", runtime_label(*view).c_str());
       ImGui::Text("Enabled: %s", view->enabled ? "true" : "false");
+      ImGui::Text("Threads: %u", view->thread_count);
+      ImGui::Text("Memory: %s", format_bytes(view->ram_bytes).c_str());
+      ImGui::Text("CPU/Core: %.1f%%", view->cpu_percent_per_core);
       std::array<char, 4096> command_buffer{};
       const std::size_t command_copy = std::min(view->command.size(), command_buffer.size() - 1);
       view->command.copy(command_buffer.data(), command_copy);
@@ -317,7 +375,7 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path) {
         ImGui::SetClipboardText(view->command.c_str());
         status_line = "Command copied to clipboard.";
       }
-      ImGui::Separator();
+      ImGui::Spacing();
 
       if (!view->enabled) {
         ImGui::TextUnformatted("This process is disabled (enabled=false) and will not start.");
@@ -339,12 +397,23 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path) {
         std::string error;
         status_line = manager->restart_process(selected, &error) ? "Process restarted." : error;
       }
+      ImGui::SameLine();
+#ifdef _WIN32
+      ImGui::BeginDisabled();
+      ImGui::Button("Send SIGINFO");
+      ImGui::EndDisabled();
+#else
+      if (ImGui::Button("Send SIGINFO")) {
+        std::string error;
+        status_line = manager->send_siginfo(selected, &error) ? "SIGINFO sent." : error;
+      }
+#endif
       if (!view->enabled) {
         ImGui::EndDisabled();
       }
 
       if (view->tty && view->enabled) {
-        ImGui::Separator();
+        ImGui::Spacing();
         ImGui::TextUnformatted("TTY Interaction");
 
         ImGui::RadioButton("Use send input box", &tty_modes[selected], 0);
@@ -363,7 +432,7 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path) {
       }
 
       if (view->enabled && (!view->tty || tty_modes[selected] == 0)) {
-        ImGui::Separator();
+        ImGui::Spacing();
         ImGui::TextUnformatted("Send Input");
 
         std::array<char, 1024> input_buffer{};
@@ -391,7 +460,7 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path) {
         }
       }
 
-      ImGui::Separator();
+      ImGui::Spacing();
       ImGui::Checkbox("Auto-scroll logs", &auto_scroll);
       if (ImGui::BeginTabBar("logs_tabs")) {
         if (ImGui::BeginTabItem("Colorized")) {

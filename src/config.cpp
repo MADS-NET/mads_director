@@ -9,18 +9,35 @@ namespace {
 
 bool parse_director(const toml::table& table, DirectorConfig* out_config, std::string* out_error) {
   const toml::node* terminal_node = table.get("terminal");
-  if (terminal_node == nullptr) {
-    return true;
+  if (terminal_node != nullptr) {
+    const auto terminal = terminal_node->value<std::string>();
+    if (!terminal.has_value()) {
+      *out_error = "Section '[director]' key 'terminal' must be a string.";
+      return false;
+    }
+
+    if (!terminal->empty()) {
+      out_config->terminal = *terminal;
+    }
   }
 
-  const auto terminal = terminal_node->value<std::string>();
-  if (!terminal.has_value()) {
-    *out_error = "Section '[director]' key 'terminal' must be a string.";
-    return false;
-  }
+  if (const toml::node* sample_rate_node = table.get("sample_rate"); sample_rate_node != nullptr) {
+    double sample_rate_seconds = 0.0;
+    if (const auto value = sample_rate_node->value<double>(); value.has_value()) {
+      sample_rate_seconds = *value;
+    } else if (const auto value = sample_rate_node->value<int64_t>(); value.has_value()) {
+      sample_rate_seconds = static_cast<double>(*value);
+    } else {
+      *out_error = "Section '[director]' key 'sample_rate' must be a number of seconds.";
+      return false;
+    }
 
-  if (!terminal->empty()) {
-    out_config->terminal = *terminal;
+    if (!(sample_rate_seconds > 0.0)) {
+      *out_error = "Section '[director]' key 'sample_rate' must be > 0.";
+      return false;
+    }
+
+    out_config->sample_rate_seconds = sample_rate_seconds;
   }
 
   return true;
