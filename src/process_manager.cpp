@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <cerrno>
 #include <ctime>
 #include <cstring>
@@ -75,7 +76,7 @@ struct ProcessManager::ManagedProcess {
   bool launched_by_scheduler = false;
   bool externally_attached = false;
   std::string pending_line;
-  bool pending_cr = false;
+  std::size_t pending_cursor = std::string::npos;
 };
 
 ProcessManager::ProcessManager() = default;
@@ -640,33 +641,110 @@ void ProcessManager::capture_output(ManagedProcess* process) {
 
 void ProcessManager::append_log(ManagedProcess* process, const std::string& text) {
   auto commit_line = [process]() {
-    process->pending_cr = false;
+    process->pending_cursor = std::string::npos;
     process->view.logs.push_back(process->pending_line);
     process->pending_line.clear();
     process->view.live_line.clear();
   };
 
-  for (char c : text) {
-    if (process->pending_cr) {
-      process->pending_cr = false;
-      if (c == '\n') {
-        commit_line();
-        continue;
-      }
-      commit_line();
+  auto write_char = [process](char c) {
+    if (process->pending_cursor == std::string::npos) {
+      process->pending_line.push_back(c);
+      return;
     }
 
+    if (process->pending_cursor < process->pending_line.size()) {
+      process->pending_line[process->pending_cursor] = c;
+    } else {
+      process->pending_line.push_back(c);
+    }
+    ++process->pending_cursor;
+  };
+
+  auto parse_csi_param = [](const std::string& params, int default_value) {
+    if (params.empty()) {
+      return default_value;
+    }
+    const std::size_t last_sep = params.rfind(';');
+    const std::string token = params.substr(last_sep == std::string::npos ? 0 : (last_sep + 1));
+    if (token.empty()) {
+      return default_value;
+    }
+    return std::atoi(token.c_str());
+  };
+
+  std::size_t i = 0;
+  while (i < text.size()) {
+    const char c = text[i];
+
     if (c == '\r') {
-      process->pending_cr = true;
+      process->pending_cursor = 0;
+      ++i;
       continue;
     }
 
     if (c == '\n') {
       commit_line();
+      ++i;
       continue;
     }
 
-    process->pending_line.push_back(c);
+    if (c == '\x1b' && i + 1 < text.size() && text[i + 1] == '[') {
+      std::size_t j = i + 2;
+      while (j < text.size() && (text[j] < '@' || text[j] > '~')) {
+        ++j;
+      }
+      if (j < text.size()) {
+        const char command = text[j];
+        const std::string params = text.substr(i + 2, j - (i + 2));
+
+        if (command == 'A') {
+          int lines_up = parse_csi_param(params, 1);
+          if (lines_up < 0) {
+            lines_up = 0;
+          }
+          const std::size_t cursor =
+            (process->pending_cursor == std::string::npos) ? process->pending_line.size() : process->pending_cursor;
+          for (int step = 0; step < lines_up; ++step) {
+            if (process->view.logs.empty()) {
+              break;
+            }
+            process->pending_line = process->view.logs.back();
+            process->view.logs.pop_back();
+          }
+          process->pending_cursor = std::min(cursor, process->pending_line.size());
+          i = j + 1;
+          continue;
+        }
+
+        if (command == 'K') {
+          int mode = parse_csi_param(params, 0);
+          std::size_t cursor =
+            (process->pending_cursor == std::string::npos) ? process->pending_line.size() : process->pending_cursor;
+          if (mode == 1) {
+            if (cursor <= process->pending_line.size()) {
+              process->pending_line.erase(0, cursor);
+            } else {
+              process->pending_line.clear();
+            }
+            process->pending_cursor = 0;
+          } else if (mode == 2) {
+            process->pending_line.clear();
+            process->pending_cursor = 0;
+          } else {
+            if (cursor < process->pending_line.size()) {
+              process->pending_line.erase(cursor);
+            }
+          }
+
+          i = j + 1;
+          continue;
+        }
+      }
+    }
+
+    write_char(c);
+    ++i;
   }
 
   process->view.live_line = process->pending_line;
@@ -676,11 +754,9 @@ void ProcessManager::append_log(ManagedProcess* process, const std::string& text
 
 void ProcessManager::append_log_line(ManagedProcess* process, const std::string& text) {
   append_log(process, text);
-  if (process->pending_cr) {
-    process->pending_cr = false;
-  }
   process->view.logs.push_back(process->pending_line);
   process->pending_line.clear();
+  process->pending_cursor = std::string::npos;
   process->view.live_line.clear();
   enforce_log_limit(process);
 }
