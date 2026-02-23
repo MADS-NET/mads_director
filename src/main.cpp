@@ -7,6 +7,10 @@
 #include <iostream>
 #include <string>
 
+#ifndef DIRECTOR_CMD_PREFIX
+#define DIRECTOR_CMD_PREFIX ""
+#endif
+
 namespace {
 
 void print_example_config() {
@@ -46,10 +50,23 @@ int main(int argc, char** argv) {
   std::string executable_path = argc > 0 ? argv[0] : "director";
   bool force_show_example = false;
   if (!executable_path.empty()) {
-    std::error_code ec;
-    const auto absolute = std::filesystem::absolute(executable_path, ec);
-    if (!ec) {
-      executable_path = absolute.string();
+    const std::filesystem::path executable_input(executable_path);
+    // Keep bare command names (e.g. "mads-director") unchanged so external
+    // attach shells resolve them through PATH. Only normalize explicit paths.
+    if (executable_input.has_parent_path()) {
+      std::error_code ec;
+      const auto absolute = std::filesystem::absolute(executable_input, ec);
+      if (!ec) {
+        executable_path = absolute.string();
+      }
+    } else {
+      const std::string cmd_prefix = DIRECTOR_CMD_PREFIX;
+      if (!cmd_prefix.empty()) {
+        const std::string required_prefix = cmd_prefix + "-";
+        if (!executable_path.starts_with(required_prefix)) {
+          executable_path = required_prefix + executable_path;
+        }
+      }
     }
   }
 

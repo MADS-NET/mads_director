@@ -105,8 +105,12 @@ if(MSVC)
   target_compile_options(${DIRECTOR_EXE_NAME} PRIVATE /W4 /permissive-)
 else()
   target_compile_options(${DIRECTOR_EXE_NAME} PRIVATE -Wall -Wextra -Wpedantic)
-  target_compile_definitions(${DIRECTOR_EXE_NAME} PRIVATE GL_SILENCE_DEPRECATION)
 endif()
+
+target_compile_definitions(${DIRECTOR_EXE_NAME} PRIVATE
+  GL_SILENCE_DEPRECATION
+  DIRECTOR_CMD_PREFIX="${MADS_CMD_PREFIX}"
+)
 
 install(TARGETS ${DIRECTOR_EXE_NAME}
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}

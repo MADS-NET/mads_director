@@ -65,6 +65,16 @@ std::string scaled_name(const std::string& base_name, int index, int scale) {
   return stream.str();
 }
 
+#ifndef _WIN32
+ssize_t send_without_sigpipe(int fd, const char* data, std::size_t size) {
+#if defined(MSG_NOSIGNAL)
+  return send(fd, data, size, MSG_NOSIGNAL);
+#else
+  return write(fd, data, size);
+#endif
+}
+#endif
+
 }  // namespace
 
 struct ProcessManager::ManagedProcess {
@@ -858,6 +868,10 @@ void ProcessManager::poll_external_attach() {
       if (flags >= 0) {
         fcntl(client_fd, F_SETFL, flags | O_NONBLOCK);
       }
+#if defined(__APPLE__) && defined(SO_NOSIGPIPE)
+      int no_sigpipe = 1;
+      (void)setsockopt(client_fd, SOL_SOCKET, SO_NOSIGPIPE, &no_sigpipe, sizeof(no_sigpipe));
+#endif
       _external_attach.client_fd = client_fd;
       process.externally_attached = true;
       append_log_line(&process, "External attach connected.");
@@ -871,7 +885,7 @@ void ProcessManager::poll_external_attach() {
   std::string chunk;
   while (process.process->read_available(&chunk)) {
     append_log(&process, chunk);
-    const ssize_t written = write(_external_attach.client_fd, chunk.data(), chunk.size());
+    const ssize_t written = send_without_sigpipe(_external_attach.client_fd, chunk.data(), chunk.size());
     if (written < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
       close_external_attach("External attach disconnected.");
       return;
