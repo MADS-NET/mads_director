@@ -4,9 +4,12 @@
 
 #include <windows.h>
 
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <tlhelp32.h>
 #include <vector>
 
 namespace {
@@ -29,6 +32,74 @@ bool resolve_conpty_api(CreatePseudoConsoleFn* out_create, ClosePseudoConsoleFn*
   *out_create = create_fn;
   *out_close = close_fn;
   return true;
+}
+
+std::string normalize_command_for_cmd(const std::string& command) {
+  std::size_t index = 0;
+  while (index < command.size() && std::isspace(static_cast<unsigned char>(command[index])) != 0) {
+    ++index;
+  }
+  if (index >= command.size()) {
+    return command;
+  }
+
+  const bool quoted = command[index] == '"';
+  std::size_t token_start = quoted ? index + 1 : index;
+  std::size_t token_end = token_start;
+  if (quoted) {
+    token_end = command.find('"', token_start);
+    if (token_end == std::string::npos) {
+      return command;
+    }
+  } else {
+    while (token_end < command.size() &&
+           std::isspace(static_cast<unsigned char>(command[token_end])) == 0) {
+      ++token_end;
+    }
+  }
+
+  std::string token = command.substr(token_start, token_end - token_start);
+  if (token.empty()) {
+    return command;
+  }
+
+  // Allow Windows-style separators even when TOML uses POSIX slashes.
+  if (token.find('/') == std::string::npos) {
+    return command;
+  }
+  std::replace(token.begin(), token.end(), '/', '\\');
+
+  std::string normalized = command;
+  normalized.replace(token_start, token_end - token_start, token);
+  return normalized;
+}
+
+DWORD find_direct_child_pid(DWORD parent_pid) {
+  const HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if (snapshot == INVALID_HANDLE_VALUE) {
+    return 0;
+  }
+
+  PROCESSENTRY32 entry{};
+  entry.dwSize = sizeof(entry);
+  if (!Process32First(snapshot, &entry)) {
+    CloseHandle(snapshot);
+    return 0;
+  }
+
+  DWORD child_pid = 0;
+  do {
+    if (entry.th32ParentProcessID != parent_pid) {
+      continue;
+    }
+    // Keep the latest pid in case multiple direct children are present.
+    if (entry.th32ProcessID > child_pid) {
+      child_pid = entry.th32ProcessID;
+    }
+  } while (Process32Next(snapshot, &entry));
+
+  CloseHandle(snapshot);
+  return child_pid;
 }
 
 class WindowsProcess final : public PlatformProcess {
@@ -151,7 +222,7 @@ class WindowsProcess final : public PlatformProcess {
     }
 
     PROCESS_INFORMATION info{};
-    std::string run_command = command;
+    std::string run_command = normalize_command_for_cmd(command);
 
     if (!workdir.empty()) {
       std::error_code ec;
@@ -256,6 +327,10 @@ class WindowsProcess final : public PlatformProcess {
 
   int process_id() const override {
     if (_running && _process_id != 0) {
+      const DWORD child_pid = find_direct_child_pid(_process_id);
+      if (child_pid != 0) {
+        return static_cast<int>(child_pid);
+      }
       return static_cast<int>(_process_id);
     }
     return -1;

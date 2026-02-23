@@ -1,18 +1,18 @@
 [director]
-sample_rate = 2.0
+sample_rate = 0.5
 
 [broker]
-command = "mads broker"
+command = "mads-broker"
 relaunch = true
 tty=true
 
 [feedback]
-command = "mads feedback"
+command = "mads-feedback"
 after = "broker"
 tty = true
 
 [perf_assess]
-command = "mads perf_assess -p 100"
+command = "mads-perf_assess -p10"
 after = "broker"
 tty=true
 relaunch = true
@@ -20,5 +20,11 @@ scale = 2
 
 [rerunner]
 after = "broker"
-command = "mads sink build/rerunner.plugin"
+command = "mads-sink build/rerunner.plugin"
 workdir = "/Users/p4010/Develop/MADS_plugins/rerunner_plugin"
+enabled = false
+
+[fmu]
+after = "broker"
+command = "build/src/main/mads-fmu models/fmu/DoubleMassSpringDamper.fmu -p1"
+workdir = "C:/Users/Utente/Devel/FMU_agent"

@@ -325,7 +325,7 @@ private:
    */
   static std::optional<std::uint64_t> process_cpu_time_ns_(pid_type pid) {
 #if defined(_WIN32)
-    HANDLE h = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
+    HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
     if (!h) return std::nullopt;
 
     FILETIME ft_create{}, ft_exit{}, ft_kernel{}, ft_user{};

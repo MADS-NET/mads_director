@@ -195,13 +195,13 @@ void ProcessManager::tick() {
 
     std::ostringstream line;
     line << "Process exited with status " << process.view.exit_code << ".";
-    append_log(&process, line.str());
+    append_log_line(&process, line.str());
 
     if (process.view.relaunch && process.view.exit_code != 0) {
-      append_log(&process, "Relaunch enabled and exit status non-zero. Restarting process.");
+      append_log_line(&process, "Relaunch enabled and exit status non-zero. Restarting process.");
       std::string error;
       if (!start_process_internal(i, &error)) {
-        append_log(&process, "Restart failed: " + error);
+        append_log_line(&process, "Restart failed: " + error);
       }
     }
   }
@@ -275,7 +275,7 @@ bool ProcessManager::stop_process(std::size_t index, std::string* out_error) {
   process.process->stop();
   process.view.running = false;
   process.view.pid = -1;
-  append_log(&process, "Process stopped by user.");
+  append_log_line(&process, "Process stopped by user.");
   return true;
 }
 
@@ -326,7 +326,7 @@ bool ProcessManager::send_siginfo(std::size_t index, std::string* out_error) {
     return false;
   }
 
-  append_log(&process, "SIGINFO sent.");
+  append_log_line(&process, "SIGINFO sent.");
   return true;
 #else
   *out_error = "SIGINFO is not supported on this platform.";
@@ -380,12 +380,12 @@ bool ProcessManager::attach_process(std::size_t index, std::string* out_error) {
     return false;
   }
 
-  append_log(&process, "Attach session started.");
+  append_log_line(&process, "Attach session started.");
   if (!process.process->attach_until_detach(out_error)) {
-    append_log(&process, "Attach failed: " + *out_error);
+    append_log_line(&process, "Attach failed: " + *out_error);
     return false;
   }
-  append_log(&process, "Attach session ended.");
+  append_log_line(&process, "Attach session ended.");
   return true;
 }
 
@@ -436,7 +436,7 @@ bool ProcessManager::open_external_attach(std::size_t index, const std::string& 
   _external_attach.client_handle = 0;
   _external_attach.socket_path = pipe_name;
 
-  append_log(&process, "Waiting for external attach client...");
+  append_log_line(&process, "Waiting for external attach client...");
   return true;
 #else
   if (index >= _processes.size()) {
@@ -512,7 +512,7 @@ bool ProcessManager::open_external_attach(std::size_t index, const std::string& 
   _external_attach.client_fd = -1;
   _external_attach.socket_path = socket_path;
 
-  append_log(&process, "Waiting for external attach client...");
+  append_log_line(&process, "Waiting for external attach client...");
   return true;
 #endif
 }
@@ -543,7 +543,7 @@ bool ProcessManager::start_process_internal(std::size_t index, std::string* out_
   std::string start_error;
   if (!process.process->start(process.command, process.workdir, process.view.tty, &start_error)) {
     *out_error = "Failed to start '" + process.view.name + "': " + start_error;
-    append_log(&process, *out_error);
+    append_log_line(&process, *out_error);
     return false;
   }
 
@@ -565,11 +565,11 @@ bool ProcessManager::start_process_internal(std::size_t index, std::string* out_
     process.view.cpu_count = 1;
   }
 
-  append_log(&process, "Process started.");
-  append_log(&process, "Command: " + process.command);
-  append_log(&process, "Working directory: " + process.workdir);
+  append_log_line(&process, "Process started.");
+  append_log_line(&process, "Command: " + process.command);
+  append_log_line(&process, "Working directory: " + process.workdir);
   if (process.view.tty) {
-    append_log(&process, "TTY mode enabled. Use GUI attach controls. Detach with Ctrl-] in attached terminal.");
+    append_log_line(&process, "TTY mode enabled. Use GUI attach controls. Detach with Ctrl-] in attached terminal.");
   }
 
   return true;
@@ -639,24 +639,31 @@ void ProcessManager::capture_output(ManagedProcess* process) {
 }
 
 void ProcessManager::append_log(ManagedProcess* process, const std::string& text) {
+  auto commit_line = [process]() {
+    process->pending_cr = false;
+    process->view.logs.push_back(process->pending_line);
+    process->pending_line.clear();
+    process->view.live_line.clear();
+  };
+
   for (char c : text) {
+    if (process->pending_cr) {
+      process->pending_cr = false;
+      if (c == '\n') {
+        commit_line();
+        continue;
+      }
+      commit_line();
+    }
+
     if (c == '\r') {
       process->pending_cr = true;
       continue;
     }
 
     if (c == '\n') {
-      process->pending_cr = false;
-      process->view.logs.push_back(process->pending_line);
-      process->pending_line.clear();
-      process->view.live_line.clear();
+      commit_line();
       continue;
-    }
-
-    if (process->pending_cr) {
-      process->pending_cr = false;
-      process->pending_line.clear();
-      process->view.live_line.clear();
     }
 
     process->pending_line.push_back(c);
@@ -664,6 +671,17 @@ void ProcessManager::append_log(ManagedProcess* process, const std::string& text
 
   process->view.live_line = process->pending_line;
 
+  enforce_log_limit(process);
+}
+
+void ProcessManager::append_log_line(ManagedProcess* process, const std::string& text) {
+  append_log(process, text);
+  if (process->pending_cr) {
+    process->pending_cr = false;
+  }
+  process->view.logs.push_back(process->pending_line);
+  process->pending_line.clear();
+  process->view.live_line.clear();
   enforce_log_limit(process);
 }
 
@@ -694,13 +712,13 @@ void ProcessManager::poll_external_attach() {
     if (ConnectNamedPipe(pipe, nullptr)) {
       _external_attach.client_handle = _external_attach.listen_handle;
       process.externally_attached = true;
-      append_log(&process, "External attach connected.");
+      append_log_line(&process, "External attach connected.");
     } else {
       const DWORD error = GetLastError();
       if (error == ERROR_PIPE_CONNECTED) {
         _external_attach.client_handle = _external_attach.listen_handle;
         process.externally_attached = true;
-        append_log(&process, "External attach connected.");
+        append_log_line(&process, "External attach connected.");
       } else if (error != ERROR_PIPE_LISTENING && error != ERROR_NO_DATA) {
         close_external_attach("External attach disconnected.");
       }
@@ -766,7 +784,7 @@ void ProcessManager::poll_external_attach() {
       }
       _external_attach.client_fd = client_fd;
       process.externally_attached = true;
-      append_log(&process, "External attach connected.");
+      append_log_line(&process, "External attach connected.");
     }
   }
 
@@ -812,7 +830,7 @@ void ProcessManager::close_external_attach(const std::string& reason) {
     auto& process = _processes[_external_attach.process_index];
     process.externally_attached = false;
     if (!reason.empty()) {
-      append_log(&process, reason);
+      append_log_line(&process, reason);
     }
   }
 
@@ -834,7 +852,7 @@ void ProcessManager::close_external_attach(const std::string& reason) {
     auto& process = _processes[_external_attach.process_index];
     process.externally_attached = false;
     if (!reason.empty()) {
-      append_log(&process, reason);
+      append_log_line(&process, reason);
     }
   }
 

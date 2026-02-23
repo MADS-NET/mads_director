@@ -78,6 +78,7 @@ class ProcessManager {
   void sample_process_metrics(ManagedProcess* process);
   void capture_output(ManagedProcess* process);
   void append_log(ManagedProcess* process, const std::string& text);
+  void append_log_line(ManagedProcess* process, const std::string& text);
   void poll_external_attach();
   void close_external_attach(const std::string& reason);
   void enforce_log_limit(ManagedProcess* process);
