@@ -24,6 +24,7 @@ std::string shell_single_quote(const std::string& input) {
   return quoted;
 }
 
+#ifdef __APPLE__
 std::string applescript_escape(const std::string& input) {
   std::string out;
   out.reserve(input.size() + 8);
@@ -38,6 +39,7 @@ std::string applescript_escape(const std::string& input) {
   }
   return out;
 }
+#endif
 
 #ifdef _WIN32
 std::string powershell_single_quote(const std::string& input) {
