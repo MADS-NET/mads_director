@@ -27,6 +27,7 @@ std::string shell_single_quote(const std::string& input) {
   return quoted;
 }
 
+#if !defined(_WIN32) && !defined(__APPLE__)
 std::string terminal_name(const std::string& terminal_command) {
   const std::size_t slash = terminal_command.find_last_of('/');
   const std::string name = (slash == std::string::npos) ? terminal_command : terminal_command.substr(slash + 1);
@@ -92,6 +93,7 @@ std::string sanitized_env_prefix_for_terminal_launch() {
   prefix += " ";
   return prefix;
 }
+#endif
 
 #ifdef __APPLE__
 std::string applescript_escape(const std::string& input) {
