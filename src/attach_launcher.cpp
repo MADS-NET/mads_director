@@ -1,5 +1,8 @@
 #include "attach_launcher.hpp"
 
+#include <algorithm>
+#include <cctype>
+#include <cstring>
 #include <cstdlib>
 #include <string>
 #include <vector>
@@ -22,6 +25,72 @@ std::string shell_single_quote(const std::string& input) {
   }
   quoted += "'";
   return quoted;
+}
+
+std::string terminal_name(const std::string& terminal_command) {
+  const std::size_t slash = terminal_command.find_last_of('/');
+  const std::string name = (slash == std::string::npos) ? terminal_command : terminal_command.substr(slash + 1);
+  return name;
+}
+
+bool prefers_double_dash(const std::string& terminal_command) {
+  std::string name = terminal_name(terminal_command);
+  std::transform(name.begin(), name.end(), name.begin(), [](unsigned char ch) {
+    return static_cast<char>(std::tolower(ch));
+  });
+  return name == "gnome-terminal" || name == "gnome-terminal.real";
+}
+
+std::string sanitized_env_prefix_for_terminal_launch() {
+  // When launched from Snap-based IDEs (for example VS Code snap), inherited GTK/SNAP
+  // variables can force host terminals to load incompatible snap libraries.
+  static constexpr const char* kVarsToUnset[] = {
+      "LD_LIBRARY_PATH",
+      "LD_PRELOAD",
+      "GTK_EXE_PREFIX",
+      "GTK_PATH",
+      "GTK_IM_MODULE_FILE",
+      "GNOME_TERMINAL_SCREEN",
+      "GNOME_TERMINAL_SERVICE",
+      "SNAP",
+      "SNAP_ARCH",
+      "SNAP_COMMON",
+      "SNAP_CONTEXT",
+      "SNAP_COOKIE",
+      "SNAP_DATA",
+      "SNAP_EUID",
+      "SNAP_INSTANCE_NAME",
+      "SNAP_LAUNCHER_ARCH_TRIPLET",
+      "SNAP_LIBRARY_PATH",
+      "SNAP_NAME",
+      "SNAP_REAL_HOME",
+      "SNAP_REVISION",
+      "SNAP_UID",
+      "SNAP_USER_COMMON",
+      "SNAP_USER_DATA",
+      "SNAP_VERSION",
+  };
+
+  bool needs_sanitize = false;
+  for (const char* var : kVarsToUnset) {
+    const char* value = std::getenv(var);
+    if (value != nullptr && std::strlen(value) > 0) {
+      needs_sanitize = true;
+      break;
+    }
+  }
+
+  if (!needs_sanitize) {
+    return "";
+  }
+
+  std::string prefix = "env";
+  for (const char* var : kVarsToUnset) {
+    prefix += " -u ";
+    prefix += var;
+  }
+  prefix += " ";
+  return prefix;
 }
 
 #ifdef __APPLE__
@@ -145,18 +214,23 @@ bool launch_attach_terminal(const std::string& executable_path, const std::strin
 #else
   const std::string command = shell_single_quote(executable_path) + " --attach-socket " + shell_single_quote(socket_path);
   const std::string wrapped = "sh -lc " + shell_single_quote(command);
+  const std::string env_prefix = sanitized_env_prefix_for_terminal_launch();
 
   std::vector<std::string> candidates;
   if (terminal_command.has_value() && !terminal_command->empty()) {
     const std::string terminal = shell_single_quote(*terminal_command);
-    candidates.push_back(terminal + " -e " + wrapped);
-    candidates.push_back(terminal + " -- " + wrapped);
+    if (prefers_double_dash(*terminal_command)) {
+      candidates.push_back(env_prefix + terminal + " -- " + wrapped);
+    } else {
+      candidates.push_back(env_prefix + terminal + " -e " + wrapped);
+      candidates.push_back(env_prefix + terminal + " -- " + wrapped);
+    }
   } else {
     candidates = {
-        "x-terminal-emulator -e " + wrapped,
-        "gnome-terminal -- " + wrapped,
-        "konsole -e " + wrapped,
-        "xterm -e " + wrapped,
+        env_prefix + "gnome-terminal -- " + wrapped,
+        env_prefix + "x-terminal-emulator -e " + wrapped,
+        env_prefix + "konsole -e " + wrapped,
+        env_prefix + "xterm -e " + wrapped,
     };
   }
 
