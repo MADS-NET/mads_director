@@ -27,7 +27,7 @@ void print_example_config() {
       << "command = \"./bin/db --port 5432\" # mandatory: command line to execute\n"
       << "after = \"\" # optional, default=\"\": start after this process name\n"
       << "workdir = \"\" # optional, default=\"\": working directory (uses director working directory)\n"
-      << "enabled = true # optional, default=true: when false, process is listed but never started\n"
+      << "enabled = true # optional, default=true: when false, skip auto-start (manual start still allowed)\n"
       << "scale = 1 # optional, default=1: number of instances to launch\n"
       << "relaunch = false # optional, default=false: restart on non-zero exit status\n"
       << "tty = false # optional, default=false: enable TTY/attach interaction\n"
@@ -36,7 +36,7 @@ void print_example_config() {
       << "command = \"./bin/api_server --port 8080\" # mandatory: command line to execute\n"
       << "after = \"db\" # optional, default=\"\": dependency by process name\n"
       << "workdir = \"services/api\" # optional, default=\"\": working directory for this process\n"
-      << "enabled = true # optional, default=true: when false, process is listed but never started\n"
+      << "enabled = true # optional, default=true: when false, skip auto-start (manual start still allowed)\n"
       << "scale = 1 # optional, default=1: number of instances to launch\n"
       << "relaunch = false # optional, default=false: restart on non-zero exit status\n"
       << "tty = false # optional, default=false: enable TTY/attach interaction\n";

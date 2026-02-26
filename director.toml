@@ -28,3 +28,4 @@ enabled = false
 after = "broker"
 command = "build/src/main/mads-fmu models/fmu/DoubleMassSpringDamper.fmu -p1"
 workdir = "C:/Users/Utente/Devel/FMU_agent"
+disabled = true

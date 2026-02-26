@@ -255,10 +255,6 @@ bool ProcessManager::start_process(std::size_t index, std::string* out_error) {
   }
 
   auto& process = _processes[index];
-  if (!process.view.enabled) {
-    *out_error = "Process is disabled in config (enabled=false).";
-    return false;
-  }
   if (!can_start(process)) {
     *out_error = "Dependencies are not started yet.";
     return false;
@@ -274,10 +270,6 @@ bool ProcessManager::stop_process(std::size_t index, std::string* out_error) {
   }
 
   auto& process = _processes[index];
-  if (!process.view.enabled) {
-    *out_error = "Process is disabled in config (enabled=false).";
-    return false;
-  }
   if (!process.view.running) {
     *out_error = "Process is not running.";
     return false;
@@ -297,10 +289,6 @@ bool ProcessManager::restart_process(std::size_t index, std::string* out_error) 
   }
 
   auto& process = _processes[index];
-  if (!process.view.enabled) {
-    *out_error = "Process is disabled in config (enabled=false).";
-    return false;
-  }
   if (process.view.running) {
     process.process->stop();
     process.view.running = false;
@@ -317,10 +305,6 @@ bool ProcessManager::send_siginfo(std::size_t index, std::string* out_error) {
   }
 
   auto& process = _processes[index];
-  if (!process.view.enabled) {
-    *out_error = "Process is disabled in config (enabled=false).";
-    return false;
-  }
   if (!process.view.running || process.view.pid <= 0) {
     *out_error = "Process is not running.";
     return false;
@@ -353,10 +337,6 @@ bool ProcessManager::send_input(std::size_t index, const std::string& input, std
   }
 
   auto& process = _processes[index];
-  if (!process.view.enabled) {
-    *out_error = "Process is disabled in config (enabled=false).";
-    return false;
-  }
   if (!process.view.running) {
     *out_error = "Process is not running.";
     return false;
@@ -377,10 +357,6 @@ bool ProcessManager::attach_process(std::size_t index, std::string* out_error) {
   }
 
   auto& process = _processes[index];
-  if (!process.view.enabled) {
-    *out_error = "Process is disabled in config (enabled=false).";
-    return false;
-  }
   if (!process.view.running) {
     *out_error = "Process is not running.";
     return false;
@@ -413,10 +389,6 @@ bool ProcessManager::open_external_attach(std::size_t index, const std::string& 
   }
 
   auto& process = _processes[index];
-  if (!process.view.enabled) {
-    *out_error = "Process is disabled in config (enabled=false).";
-    return false;
-  }
   if (!process.view.running) {
     *out_error = "Process is not running.";
     return false;
@@ -461,10 +433,6 @@ bool ProcessManager::open_external_attach(std::size_t index, const std::string& 
   }
 
   auto& process = _processes[index];
-  if (!process.view.enabled) {
-    *out_error = "Process is disabled in config (enabled=false).";
-    return false;
-  }
   if (!process.view.running) {
     *out_error = "Process is not running.";
     return false;

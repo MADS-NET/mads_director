@@ -19,14 +19,14 @@
 namespace {
 
 std::string runtime_label(const ProcessRuntimeView& view) {
-  if (!view.enabled) {
-    return "disabled";
-  }
   if (view.running) {
     if (view.pid > 0) {
       return "running - " + std::to_string(view.pid);
     }
     return "running";
+  }
+  if (!view.enabled && !view.ever_started) {
+    return "autostart disabled";
   }
   if (!view.ever_started) {
     return "pending";
@@ -378,10 +378,7 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path) {
       ImGui::Spacing();
 
       if (!view->enabled) {
-        ImGui::TextUnformatted("This process is disabled (enabled=false) and will not start.");
-      }
-      if (!view->enabled) {
-        ImGui::BeginDisabled();
+        ImGui::TextUnformatted("Autostart is disabled (enabled=false). You can still start it manually.");
       }
       if (ImGui::Button("Start")) {
         std::string error;
@@ -408,11 +405,8 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path) {
         status_line = manager->send_siginfo(selected, &error) ? "SIGINFO sent." : error;
       }
 #endif
-      if (!view->enabled) {
-        ImGui::EndDisabled();
-      }
 
-      if (view->tty && view->enabled) {
+      if (view->tty) {
         ImGui::Spacing();
         ImGui::TextUnformatted("TTY Interaction");
 
@@ -431,7 +425,7 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path) {
         }
       }
 
-      if (view->enabled && (!view->tty || tty_modes[selected] == 0)) {
+      if (!view->tty || tty_modes[selected] == 0) {
         ImGui::Spacing();
         ImGui::TextUnformatted("Send Input");
 

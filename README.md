@@ -10,7 +10,7 @@
 - Optional fields:
   - `after = "process_name"`: start this process only after another process has started
   - `workdir = "path"`: run process in this working directory (default: `director` working directory)
-  - `enabled = <bool>`: include process but skip starting it when `false` (default: `true`)
+  - `enabled = <bool>`: disable auto-start when `false` (manual start from UI is still allowed; default: `true`)
   - `scale = <int>`: spawn N instances of this process
   - `relaunch = <bool>`: auto-restart on non-zero exit
   - `tty = <bool>`: run child under PTY and allow interactive `attach`/`detach`
