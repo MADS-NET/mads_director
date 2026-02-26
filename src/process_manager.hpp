@@ -41,6 +41,7 @@ class ProcessManager {
   ProcessManager& operator=(ProcessManager&&) = delete;
 
   bool initialize(const DirectorConfig& config, std::string* out_error);
+  bool reload(const DirectorConfig& config, std::string* out_error);
 
   void launch_ready_processes();
   void tick();

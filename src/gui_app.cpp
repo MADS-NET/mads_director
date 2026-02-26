@@ -1,5 +1,6 @@
 #include "gui_app.hpp"
 
+#include "config.hpp"
 #include "process_manager.hpp"
 
 #include <imgui.h>
@@ -230,7 +231,7 @@ std::string compose_plain_log_text(const ProcessRuntimeView& view) {
 
 }  // namespace
 
-int GuiApp::run(ProcessManager* manager, const std::string& executable_path) {
+int GuiApp::run(ProcessManager* manager, const std::string& executable_path, const std::string& config_path) {
 #ifdef _WIN32
   (void)executable_path;
 #endif
@@ -312,6 +313,19 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path) {
     ImGui::SetColumnWidth(0, 360.0f);
 
     ImGui::TextUnformatted("Processes");
+    ImGui::SameLine();
+    if (ImGui::Button("Reload file")) {
+      DirectorConfig reloaded_config;
+      std::string error;
+      if (!load_config(config_path, &reloaded_config, &error)) {
+        status_line = "Reload failed: " + error;
+      } else if (!manager->reload(reloaded_config, &error)) {
+        status_line = "Reload failed: " + error;
+      } else {
+        selected = clamp_selected(manager, selected);
+        status_line = "Configuration reloaded.";
+      }
+    }
     ImGui::Separator();
 
     if (ImGui::BeginTable("process_table", 2,

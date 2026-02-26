@@ -12,7 +12,7 @@ after = "broker"
 tty = true
 
 [perf_assess]
-command = "mads-perf_assess -p10 -id=${ID}"
+command = "mads-perf_assess -p10 -id=\"pref_assess_${ID}\""
 after = "broker"
 tty=true
 relaunch = true

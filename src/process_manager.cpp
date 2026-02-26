@@ -80,6 +80,69 @@ std::string expand_command_template(const std::string& command, const std::strin
   return expanded;
 }
 
+struct ProcessDefinition {
+  std::string name;
+  std::string base_name;
+  std::string command;
+  std::string workdir;
+  bool enabled = true;
+  bool relaunch = false;
+  bool tty = false;
+  std::vector<std::string> dependencies;
+};
+
+bool build_process_definitions(const DirectorConfig& config, const std::filesystem::path& base_workdir,
+                               std::vector<ProcessDefinition>* out_definitions, std::string* out_error) {
+  out_definitions->clear();
+  std::unordered_map<std::string, int> base_scale;
+  std::unordered_map<std::string, std::vector<std::string>> graph;
+
+  for (const auto& process : config.processes) {
+    base_scale[process.name] = process.scale;
+    if (process.after.has_value()) {
+      graph[process.name].push_back(*process.after);
+    }
+  }
+
+  std::unordered_set<std::string> visiting;
+  std::unordered_set<std::string> visited;
+  for (const auto& process : config.processes) {
+    if (detect_cycle_dfs(process.name, graph, &visiting, &visited)) {
+      *out_error = "Dependency cycle detected around process '" + process.name + "'.";
+      return false;
+    }
+  }
+
+  for (const auto& process : config.processes) {
+    for (int i = 0; i < process.scale; ++i) {
+      ProcessDefinition definition;
+      definition.name = scaled_name(process.name, i, process.scale);
+      definition.base_name = process.name;
+      definition.enabled = process.enabled;
+      definition.relaunch = process.relaunch;
+      definition.tty = process.tty;
+      if (process.workdir.has_value()) {
+        const std::filesystem::path candidate(*process.workdir);
+        definition.workdir = candidate.is_absolute() ? candidate.string() : (base_workdir / candidate).string();
+      } else {
+        definition.workdir = base_workdir.string();
+      }
+      definition.command = expand_command_template(process.command, definition.workdir, i);
+
+      if (process.after.has_value()) {
+        const int dep_scale = base_scale[*process.after];
+        for (int dep_index = 0; dep_index < dep_scale; ++dep_index) {
+          definition.dependencies.push_back(scaled_name(*process.after, dep_index, dep_scale));
+        }
+      }
+
+      out_definitions->push_back(std::move(definition));
+    }
+  }
+
+  return true;
+}
+
 #ifndef _WIN32
 ssize_t send_without_sigpipe(int fd, const char* data, std::size_t size) {
 #if defined(MSG_NOSIGNAL)
@@ -98,6 +161,7 @@ struct ProcessManager::ManagedProcess {
   std::string workdir;
   std::unique_ptr<PlatformProcess> process;
   std::unique_ptr<mads::process_metrics> metrics;
+  bool scheduler_start_allowed = true;
   bool launched_by_scheduler = false;
   bool externally_attached = false;
   std::string pending_line;
@@ -111,6 +175,7 @@ ProcessManager::~ProcessManager() {
 }
 
 bool ProcessManager::initialize(const DirectorConfig& config, std::string* out_error) {
+  stop_all();
   _processes.clear();
   _terminal_command.reset();
   _sample_rate_seconds = config.sample_rate_seconds;
@@ -120,57 +185,101 @@ bool ProcessManager::initialize(const DirectorConfig& config, std::string* out_e
   }
   const std::filesystem::path base_workdir = std::filesystem::current_path();
 
-  std::unordered_map<std::string, int> base_scale;
-  std::unordered_map<std::string, std::optional<std::string>> base_after;
-  std::unordered_map<std::string, std::vector<std::string>> graph;
+  std::vector<ProcessDefinition> definitions;
+  if (!build_process_definitions(config, base_workdir, &definitions, out_error)) {
+    return false;
+  }
 
-  for (const auto& process : config.processes) {
-    base_scale[process.name] = process.scale;
-    base_after[process.name] = process.after;
-    if (process.after.has_value()) {
-      graph[process.name].push_back(*process.after);
+  for (const auto& definition : definitions) {
+    ManagedProcess managed;
+    managed.view.name = definition.name;
+    managed.view.base_name = definition.base_name;
+    managed.view.enabled = definition.enabled;
+    managed.view.relaunch = definition.relaunch;
+    managed.view.tty = definition.tty;
+    managed.workdir = definition.workdir;
+    managed.view.command = definition.command;
+    managed.command = definition.command;
+    managed.view.dependencies = definition.dependencies;
+    managed.process = create_platform_process();
+    _processes.push_back(std::move(managed));
+  }
+
+  return true;
+}
+
+bool ProcessManager::reload(const DirectorConfig& config, std::string* out_error) {
+  const std::filesystem::path base_workdir = std::filesystem::current_path();
+  std::vector<ProcessDefinition> definitions;
+  if (!build_process_definitions(config, base_workdir, &definitions, out_error)) {
+    return false;
+  }
+
+  if (_external_attach.active) {
+    close_external_attach("Configuration reloaded.");
+  }
+
+  _terminal_command.reset();
+  if (config.terminal.has_value() && !config.terminal->empty()) {
+    _terminal_command = config.terminal;
+  }
+  _sample_rate_seconds = config.sample_rate_seconds;
+  _last_sample_tick_ms = 0;
+
+  std::unordered_map<std::string, std::size_t> existing_by_name;
+  existing_by_name.reserve(_processes.size());
+  for (std::size_t i = 0; i < _processes.size(); ++i) {
+    existing_by_name[_processes[i].view.name] = i;
+  }
+
+  std::vector<ManagedProcess> reloaded;
+  reloaded.reserve(definitions.size());
+  std::vector<bool> retained(_processes.size(), false);
+
+  for (const auto& definition : definitions) {
+    const auto existing = existing_by_name.find(definition.name);
+    if (existing != existing_by_name.end()) {
+      ManagedProcess managed = std::move(_processes[existing->second]);
+      retained[existing->second] = true;
+      managed.view.base_name = definition.base_name;
+      managed.view.enabled = definition.enabled;
+      managed.view.relaunch = definition.relaunch;
+      managed.view.tty = definition.tty;
+      managed.view.command = definition.command;
+      managed.command = definition.command;
+      managed.workdir = definition.workdir;
+      managed.view.dependencies = definition.dependencies;
+      managed.scheduler_start_allowed = false;
+      reloaded.push_back(std::move(managed));
+      continue;
+    }
+
+    ManagedProcess managed;
+    managed.view.name = definition.name;
+    managed.view.base_name = definition.base_name;
+    managed.view.enabled = definition.enabled;
+    managed.view.relaunch = definition.relaunch;
+    managed.view.tty = definition.tty;
+    managed.view.command = definition.command;
+    managed.command = definition.command;
+    managed.workdir = definition.workdir;
+    managed.view.dependencies = definition.dependencies;
+    managed.process = create_platform_process();
+    managed.scheduler_start_allowed = false;
+    reloaded.push_back(std::move(managed));
+  }
+
+  for (std::size_t i = 0; i < _processes.size(); ++i) {
+    if (retained[i]) {
+      continue;
+    }
+    auto& process = _processes[i];
+    if (process.view.running) {
+      process.process->stop();
     }
   }
 
-  std::unordered_set<std::string> visiting;
-  std::unordered_set<std::string> visited;
-  for (const auto& process : config.processes) {
-    if (detect_cycle_dfs(process.name, graph, &visiting, &visited)) {
-      *out_error = "Dependency cycle detected around process '" + process.name + "'.";
-      return false;
-    }
-  }
-
-  for (const auto& process : config.processes) {
-    for (int i = 0; i < process.scale; ++i) {
-      ManagedProcess managed;
-      managed.view.name = scaled_name(process.name, i, process.scale);
-      managed.view.base_name = process.name;
-      managed.view.enabled = process.enabled;
-      managed.view.relaunch = process.relaunch;
-      managed.view.tty = process.tty;
-      if (process.workdir.has_value()) {
-        const std::filesystem::path candidate(*process.workdir);
-        managed.workdir = candidate.is_absolute() ? candidate.string() : (base_workdir / candidate).string();
-      } else {
-        managed.workdir = base_workdir.string();
-      }
-      const std::string expanded_command = expand_command_template(process.command, managed.workdir, i);
-      managed.view.command = expanded_command;
-      managed.command = expanded_command;
-      managed.process = create_platform_process();
-
-      if (process.after.has_value()) {
-        const int dep_scale = base_scale[*process.after];
-        for (int dep_index = 0; dep_index < dep_scale; ++dep_index) {
-          managed.view.dependencies.push_back(scaled_name(*process.after, dep_index, dep_scale));
-        }
-      }
-
-      _processes.push_back(std::move(managed));
-    }
-  }
-
+  _processes = std::move(reloaded);
   return true;
 }
 
@@ -179,6 +288,9 @@ void ProcessManager::launch_ready_processes() {
   for (std::size_t i = 0; i < _processes.size(); ++i) {
     auto& process = _processes[i];
     if (!process.view.enabled) {
+      continue;
+    }
+    if (!process.scheduler_start_allowed) {
       continue;
     }
     if (process.view.running || process.view.ever_started) {

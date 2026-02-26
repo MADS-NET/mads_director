@@ -6,5 +6,5 @@ class ProcessManager;
 
 class GuiApp {
  public:
-  int run(ProcessManager* manager, const std::string& executable_path);
+  int run(ProcessManager* manager, const std::string& executable_path, const std::string& config_path);
 };

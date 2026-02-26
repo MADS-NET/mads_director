@@ -120,5 +120,5 @@ int main(int argc, char** argv) {
   manager.launch_ready_processes();
 
   GuiApp gui;
-  return gui.run(&manager, executable_path);
+  return gui.run(&manager, executable_path, config_path);
 }
