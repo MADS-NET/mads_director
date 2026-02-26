@@ -12,7 +12,7 @@ after = "broker"
 tty = true
 
 [perf_assess]
-command = "mads-perf_assess -p10"
+command = "mads-perf_assess -p10 -id=${ID}"
 after = "broker"
 tty=true
 relaunch = true
@@ -28,4 +28,9 @@ enabled = false
 after = "broker"
 command = "build/src/main/mads-fmu models/fmu/DoubleMassSpringDamper.fmu -p1"
 workdir = "C:/Users/Utente/Devel/FMU_agent"
-disabled = true
+enabled = false
+
+[mongo]
+command = "docker run --name mads-mongo-test --rm -v ${PWD}/db:/data/db -p27017:27017 -it mongo"
+tty = true
+enabled = false

@@ -7,6 +7,9 @@
 - TOML-driven process definitions
 - Optional global `[director]` settings
 - Required field per process section: `command` (the section name is the process name)
+  - command template variables:
+    - `${PWD}`: resolved working directory for the process instance
+    - `${ID}`: process instance index (0-based)
 - Optional fields:
   - `after = "process_name"`: start this process only after another process has started
   - `workdir = "path"`: run process in this working directory (default: `director` working directory)
@@ -65,7 +68,7 @@ Use one top-level section per process. The section name is the process name:
 
 ```toml
 [api]
-command = "./my-service --port 9000"
+command = "./my-service --port 9000 --wd=${PWD} --id=${ID}"
 after = "db"
 workdir = "services/api"
 enabled = true

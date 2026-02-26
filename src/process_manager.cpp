@@ -65,6 +65,21 @@ std::string scaled_name(const std::string& base_name, int index, int scale) {
   return stream.str();
 }
 
+std::string expand_command_template(const std::string& command, const std::string& workdir, int instance_id) {
+  std::string expanded = command;
+  const auto replace_all = [](std::string* text, const std::string& token, const std::string& value) {
+    std::size_t pos = 0;
+    while ((pos = text->find(token, pos)) != std::string::npos) {
+      text->replace(pos, token.size(), value);
+      pos += value.size();
+    }
+  };
+
+  replace_all(&expanded, "${PWD}", workdir);
+  replace_all(&expanded, "${ID}", std::to_string(instance_id));
+  return expanded;
+}
+
 #ifndef _WIN32
 ssize_t send_without_sigpipe(int fd, const char* data, std::size_t size) {
 #if defined(MSG_NOSIGNAL)
@@ -134,14 +149,15 @@ bool ProcessManager::initialize(const DirectorConfig& config, std::string* out_e
       managed.view.enabled = process.enabled;
       managed.view.relaunch = process.relaunch;
       managed.view.tty = process.tty;
-      managed.view.command = process.command;
-      managed.command = process.command;
       if (process.workdir.has_value()) {
         const std::filesystem::path candidate(*process.workdir);
         managed.workdir = candidate.is_absolute() ? candidate.string() : (base_workdir / candidate).string();
       } else {
         managed.workdir = base_workdir.string();
       }
+      const std::string expanded_command = expand_command_template(process.command, managed.workdir, i);
+      managed.view.command = expanded_command;
+      managed.command = expanded_command;
       managed.process = create_platform_process();
 
       if (process.after.has_value()) {
