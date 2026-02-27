@@ -239,7 +239,11 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path, con
     return 1;
   }
 
+#if defined(__linux__) && (defined(__aarch64__) || defined(__arm64__))
+  const char* glsl_version = "#version 130";
+#else
   const char* glsl_version = "#version 150";
+#endif
 #if defined(__APPLE__)
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
