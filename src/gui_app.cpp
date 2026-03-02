@@ -18,8 +18,21 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <system_error>
 #include <string>
 #include <vector>
+
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#elif defined(__linux__)
+#include <limits.h>
+#include <unistd.h>
+#endif
 
 namespace {
 
@@ -233,6 +246,68 @@ std::string compose_plain_log_text(const ProcessRuntimeView& view) {
   return text;
 }
 
+std::filesystem::path current_executable_path() {
+#if defined(_WIN32)
+  std::wstring buffer(512, L'\0');
+  while (true) {
+    const DWORD copied = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+    if (copied == 0) {
+      return {};
+    }
+    if (copied < buffer.size()) {
+      buffer.resize(copied);
+      return std::filesystem::path(buffer);
+    }
+    buffer.resize(buffer.size() * 2);
+  }
+#elif defined(__APPLE__)
+  uint32_t size = 0;
+  (void)_NSGetExecutablePath(nullptr, &size);
+  if (size == 0) {
+    return {};
+  }
+  std::vector<char> buffer(size);
+  if (_NSGetExecutablePath(buffer.data(), &size) != 0) {
+    return {};
+  }
+  std::error_code ec;
+  const auto canonical = std::filesystem::weakly_canonical(std::filesystem::path(buffer.data()), ec);
+  if (!ec) {
+    return canonical;
+  }
+  return std::filesystem::path(buffer.data());
+#elif defined(__linux__)
+  std::array<char, PATH_MAX> buffer {};
+  const auto copied = readlink("/proc/self/exe", buffer.data(), buffer.size() - 1);
+  if (copied <= 0) {
+    return {};
+  }
+  buffer[static_cast<std::size_t>(copied)] = '\0';
+  return std::filesystem::path(buffer.data());
+#else
+  return {};
+#endif
+}
+
+std::filesystem::path executable_directory(const std::string& executable_path) {
+  const std::filesystem::path runtime_path = current_executable_path();
+  if (!runtime_path.empty() && runtime_path.has_parent_path()) {
+    return runtime_path.parent_path();
+  }
+
+  const std::filesystem::path configured_path(executable_path);
+  if (configured_path.has_parent_path()) {
+    std::error_code ec;
+    const auto absolute = std::filesystem::absolute(configured_path, ec);
+    if (!ec && absolute.has_parent_path()) {
+      return absolute.parent_path();
+    }
+    return configured_path.parent_path();
+  }
+
+  return {};
+}
+
 }  // namespace
 
 int GuiApp::run(ProcessManager* manager, const std::string& executable_path, const std::string& config_path) {
@@ -275,32 +350,30 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path, con
   ImGui_ImplGlfw_InitForOpenGL(window, true);
   ImGui_ImplOpenGL3_Init(glsl_version);
 
-  // Load logo from ../share/images/logo_white.png relative to the executable
+  // Load logo from ../share/images/logo_white.png relative to the executable location.
   GLuint logo_texture = 0;
   float logo_display_w = 0.0f;
   float logo_display_h = 0.0f;
   {
-    const std::filesystem::path exe_path(executable_path);
-    std::filesystem::path logo_path;
-    if (exe_path.has_parent_path()) {
-      logo_path = exe_path.parent_path() / ".." / "share" / "images" / "logo_white.png";
-    } else {
-      logo_path = std::filesystem::path("..") / "share" / "images" / "logo_white.png";
-    }
-    int w = 0, h = 0, channels = 0;
-    unsigned char* data = stbi_load(logo_path.string().c_str(), &w, &h, &channels, 4);
-    if (data != nullptr) {
-      const float max_h = 30.0f;
-      const float scale = max_h / static_cast<float>(h);
-      logo_display_w = static_cast<float>(w) * scale;
-      logo_display_h = max_h;
-      glGenTextures(1, &logo_texture);
-      glBindTexture(GL_TEXTURE_2D, logo_texture);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-      glBindTexture(GL_TEXTURE_2D, 0);
-      stbi_image_free(data);
+    const std::filesystem::path exe_dir = executable_directory(executable_path);
+    if (!exe_dir.empty()) {
+      const std::filesystem::path logo_path =
+          (exe_dir / ".." / "share" / "images" / "logo_white.png").lexically_normal();
+      int w = 0, h = 0, channels = 0;
+      unsigned char* data = stbi_load(logo_path.string().c_str(), &w, &h, &channels, 4);
+      if (data != nullptr) {
+        const float max_h = 30.0f;
+        const float scale = max_h / static_cast<float>(h);
+        logo_display_w = static_cast<float>(w) * scale;
+        logo_display_h = max_h;
+        glGenTextures(1, &logo_texture);
+        glBindTexture(GL_TEXTURE_2D, logo_texture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        stbi_image_free(data);
+      }
     }
   }
 
