@@ -20,6 +20,9 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      - name: Fetch tags
+        run: git fetch --force --tags
+
       - name: Install Linux deps
         if: runner.os == 'Linux'
         run: |

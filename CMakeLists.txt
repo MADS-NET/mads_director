@@ -8,17 +8,21 @@ execute_process(
   RESULT_VARIABLE DIRECTOR_GIT_TAGS_RESULT
 )
 
-if(NOT DIRECTOR_GIT_TAGS_RESULT EQUAL 0 OR DIRECTOR_GIT_TAGS STREQUAL "")
-  message(FATAL_ERROR "Could not determine version: no Git tags found or Git command failed.")
-endif()
+if(DIRECTOR_GIT_TAGS_RESULT EQUAL 0 AND NOT DIRECTOR_GIT_TAGS STREQUAL "")
+  string(REPLACE "\n" ";" DIRECTOR_GIT_TAG_LIST "${DIRECTOR_GIT_TAGS}")
+  list(GET DIRECTOR_GIT_TAG_LIST 0 DIRECTOR_LATEST_TAG)
+  string(REGEX REPLACE "^[vV]" "" DIRECTOR_VERSION "${DIRECTOR_LATEST_TAG}")
+  string(REGEX REPLACE "-.*$" "" DIRECTOR_VERSION "${DIRECTOR_VERSION}")
 
-string(REPLACE "\n" ";" DIRECTOR_GIT_TAG_LIST "${DIRECTOR_GIT_TAGS}")
-list(GET DIRECTOR_GIT_TAG_LIST 0 DIRECTOR_LATEST_TAG)
-string(REGEX REPLACE "^[vV]" "" DIRECTOR_VERSION "${DIRECTOR_LATEST_TAG}")
-string(REGEX REPLACE "-.*$" "" DIRECTOR_VERSION "${DIRECTOR_VERSION}")
-
-if(DIRECTOR_VERSION STREQUAL "")
-  message(FATAL_ERROR "Latest Git tag '${DIRECTOR_LATEST_TAG}' produced an empty normalized version.")
+  if(DIRECTOR_VERSION STREQUAL "")
+    message(FATAL_ERROR "Latest Git tag '${DIRECTOR_LATEST_TAG}' produced an empty normalized version.")
+  endif()
+else()
+  if(DEFINED ENV{GITHUB_REF_TYPE} AND "$ENV{GITHUB_REF_TYPE}" STREQUAL "tag")
+    message(FATAL_ERROR "Could not determine version from Git tags on a tag build.")
+  endif()
+  set(DIRECTOR_VERSION "0.0.0")
+  message(WARNING "Could not determine version from Git tags; using fallback version '${DIRECTOR_VERSION}'.")
 endif()
 
 project(director VERSION ${DIRECTOR_VERSION} LANGUAGES CXX)
