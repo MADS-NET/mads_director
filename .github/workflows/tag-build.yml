@@ -69,22 +69,22 @@ jobs:
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
-        run: cpack --config build/CPackConfig.cmake -C Release
+        run: cpack --config build/CPackConfig.cmake -C Release -B build/packages
 
       - name: Package (non-Windows)
         if: runner.os != 'Windows'
-        run: cpack --config build/CPackConfig.cmake
+        run: cpack --config build/CPackConfig.cmake -B build/packages
 
       - name: Collect package artifacts (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path release-assets -Force | Out-Null
-          Get-ChildItem -Path build -File | Where-Object { $_.Extension -in '.exe', '.msi', '.zip' } | ForEach-Object {
+          Get-ChildItem -Path build/packages -File | Where-Object { $_.Extension -in '.exe', '.msi', '.zip' } | ForEach-Object {
             Copy-Item -Path $_.FullName -Destination release-assets
           }
           if (-not (Get-ChildItem -Path release-assets -File -ErrorAction SilentlyContinue)) {
-            Write-Error "No package artifacts found in build directory."
+            Write-Error "No package artifacts found in build/packages directory."
             exit 1
           }
 
@@ -92,9 +92,9 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           mkdir -p release-assets
-          find build -maxdepth 1 -type f \( -name '*.deb' -o -name '*.sh' -o -name '*.tar.gz' -o -name '*.zip' \) -exec cp {} release-assets/ \;
+          find build/packages -maxdepth 1 -type f \( -name '*.deb' -o -name '*.sh' -o -name '*.tar.gz' -o -name '*.zip' \) -exec cp {} release-assets/ \;
           if [ -z "$(ls -A release-assets)" ]; then
-            echo "No package artifacts found in build directory."
+            echo "No package artifacts found in build/packages directory."
             exit 1
           fi
 
