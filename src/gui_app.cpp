@@ -275,7 +275,7 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path, con
   ImGui_ImplGlfw_InitForOpenGL(window, true);
   ImGui_ImplOpenGL3_Init(glsl_version);
 
-  // Load logo from ../images/logo_white.png relative to the executable
+  // Load logo from ../share/images/logo_white.png relative to the executable
   GLuint logo_texture = 0;
   float logo_display_w = 0.0f;
   float logo_display_h = 0.0f;
@@ -283,9 +283,9 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path, con
     const std::filesystem::path exe_path(executable_path);
     std::filesystem::path logo_path;
     if (exe_path.has_parent_path()) {
-      logo_path = exe_path.parent_path() / ".." / "images" / "logo_white.png";
+      logo_path = exe_path.parent_path() / ".." / "share" / "images" / "logo_white.png";
     } else {
-      logo_path = std::filesystem::path("..") / "images" / "logo_white.png";
+      logo_path = std::filesystem::path("..") / "share" / "images" / "logo_white.png";
     }
     int w = 0, h = 0, channels = 0;
     unsigned char* data = stbi_load(logo_path.string().c_str(), &w, &h, &channels, 4);
@@ -548,12 +548,16 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path, con
     if (logo_texture != 0) {
       ImGui::Image(static_cast<ImTextureID>(logo_texture), ImVec2(logo_display_w, logo_display_h));
       ImGui::SameLine();
+      ImGui::BeginGroup();
     }
     ImGui::Text("Status: %s", status_line.empty() ? "ready" : status_line.c_str());
     const auto* selected_view = manager->process_at(selected);
     ImGui::TextWrapped("Command: %s",
                        (selected_view == nullptr || selected_view->command.empty()) ? "<none>"
                                                                                      : selected_view->command.c_str());
+    if (logo_texture != 0) {
+      ImGui::EndGroup();
+    }
 
     ImGui::End();
 
