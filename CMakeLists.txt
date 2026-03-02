@@ -35,24 +35,24 @@ else()
   set(DIRECTOR_EXE_NAME "${MADS_CMD_PREFIX}-director")
 endif()
 
-find_program(MADS_EXECUTABLE mads)
-if(NOT MADS_EXECUTABLE)
-  message(FATAL_ERROR "Required command 'mads' was not found in PATH. Installation and packaging require 'mads -p'.")
-endif()
-
-execute_process(
-  COMMAND "${MADS_EXECUTABLE}" -p
-  OUTPUT_VARIABLE MADS_INSTALL_PREFIX
-  OUTPUT_STRIP_TRAILING_WHITESPACE
-  RESULT_VARIABLE MADS_INSTALL_PREFIX_RESULT
-)
-
-if(NOT MADS_INSTALL_PREFIX_RESULT EQUAL 0 OR MADS_INSTALL_PREFIX STREQUAL "")
-  message(FATAL_ERROR "Could not determine install prefix from 'mads -p'. Installation and packaging are aborted.")
-endif()
-
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-  set(CMAKE_INSTALL_PREFIX "${MADS_INSTALL_PREFIX}" CACHE PATH "Install path prefix." FORCE)
+  find_program(MADS_EXECUTABLE mads)
+  if(MADS_EXECUTABLE)
+    execute_process(
+      COMMAND "${MADS_EXECUTABLE}" -p
+      OUTPUT_VARIABLE MADS_INSTALL_PREFIX
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      RESULT_VARIABLE MADS_INSTALL_PREFIX_RESULT
+    )
+
+    if(MADS_INSTALL_PREFIX_RESULT EQUAL 0 AND NOT MADS_INSTALL_PREFIX STREQUAL "")
+      set(CMAKE_INSTALL_PREFIX "${MADS_INSTALL_PREFIX}" CACHE PATH "Install path prefix." FORCE)
+    else()
+      message(WARNING "Could not determine install prefix from 'mads -p'; using default CMAKE_INSTALL_PREFIX='${CMAKE_INSTALL_PREFIX}'.")
+    endif()
+  else()
+    message(WARNING "Command 'mads' not found; using default CMAKE_INSTALL_PREFIX='${CMAKE_INSTALL_PREFIX}'.")
+  endif()
 endif()
 
 include(FetchContent)

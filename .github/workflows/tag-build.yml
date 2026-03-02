@@ -5,6 +5,9 @@ on:
     tags:
       - "*"
 
+permissions:
+  contents: write
+
 jobs:
   compile:
     name: ${{ matrix.name }}
@@ -55,3 +58,63 @@ jobs:
       - name: Build (non-Windows)
         if: runner.os != 'Windows'
         run: cmake --build build --parallel
+
+      - name: Install Inno Setup
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: cpack --config build/CPackConfig.cmake -C Release
+
+      - name: Package (non-Windows)
+        if: runner.os != 'Windows'
+        run: cpack --config build/CPackConfig.cmake
+
+      - name: Collect package artifacts (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path release-assets -Force | Out-Null
+          Get-ChildItem -Path build -File | Where-Object { $_.Extension -in '.exe', '.msi', '.zip' } | ForEach-Object {
+            Copy-Item -Path $_.FullName -Destination release-assets
+          }
+          if (-not (Get-ChildItem -Path release-assets -File -ErrorAction SilentlyContinue)) {
+            Write-Error "No package artifacts found in build directory."
+            exit 1
+          }
+
+      - name: Collect package artifacts (non-Windows)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p release-assets
+          find build -maxdepth 1 -type f \( -name '*.deb' -o -name '*.sh' -o -name '*.tar.gz' -o -name '*.zip' \) -exec cp {} release-assets/ \;
+          if [ -z "$(ls -A release-assets)" ]; then
+            echo "No package artifacts found in build directory."
+            exit 1
+          fi
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ matrix.os }}
+          path: release-assets/*
+          if-no-files-found: error
+
+  release:
+    name: Create release
+    needs: compile
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: packages-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
