@@ -1,0 +1,3 @@
+/home/runner/work/mads_director/mads_director/_codeql_build_dir/_deps/stb-subbuild/CMakeFiles/stb-populate.dir
+/home/runner/work/mads_director/mads_director/_codeql_build_dir/_deps/stb-subbuild/CMakeFiles/edit_cache.dir
+/home/runner/work/mads_director/mads_director/_codeql_build_dir/_deps/stb-subbuild/CMakeFiles/rebuild_cache.dir

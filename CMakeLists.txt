@@ -91,7 +91,13 @@ FetchContent_Declare(
   GIT_TAG v1.91.9b
 )
 
-FetchContent_MakeAvailable(glfw imgui)
+FetchContent_Declare(
+  stb
+  GIT_REPOSITORY https://github.com/nothings/stb.git
+  GIT_TAG f1c79c0
+)
+
+FetchContent_MakeAvailable(glfw imgui stb)
 
 add_library(imgui STATIC
   ${imgui_SOURCE_DIR}/imgui.cpp
@@ -121,7 +127,7 @@ add_executable(${DIRECTOR_EXE_NAME}
   src/platform_process_windows.cpp
 )
 
-target_include_directories(${DIRECTOR_EXE_NAME} PRIVATE src)
+target_include_directories(${DIRECTOR_EXE_NAME} PRIVATE src ${stb_SOURCE_DIR})
 
 find_package(OpenGL REQUIRED)
 
