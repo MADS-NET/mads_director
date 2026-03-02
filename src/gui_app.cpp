@@ -9,11 +9,15 @@
 
 #include <GLFW/glfw3.h>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
 #include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -232,9 +236,6 @@ std::string compose_plain_log_text(const ProcessRuntimeView& view) {
 }  // namespace
 
 int GuiApp::run(ProcessManager* manager, const std::string& executable_path, const std::string& config_path) {
-#ifdef _WIN32
-  (void)executable_path;
-#endif
   if (!glfwInit()) {
     return 1;
   }
@@ -273,6 +274,35 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path, con
 
   ImGui_ImplGlfw_InitForOpenGL(window, true);
   ImGui_ImplOpenGL3_Init(glsl_version);
+
+  // Load logo from ../share/images/logo_white.png relative to the executable
+  GLuint logo_texture = 0;
+  float logo_display_w = 0.0f;
+  float logo_display_h = 0.0f;
+  {
+    const std::filesystem::path exe_path(executable_path);
+    std::filesystem::path logo_path;
+    if (exe_path.has_parent_path()) {
+      logo_path = exe_path.parent_path() / ".." / "share" / "images" / "logo_white.png";
+    } else {
+      logo_path = std::filesystem::path("..") / "share" / "images" / "logo_white.png";
+    }
+    int w = 0, h = 0, channels = 0;
+    unsigned char* data = stbi_load(logo_path.string().c_str(), &w, &h, &channels, 4);
+    if (data != nullptr) {
+      const float max_h = 30.0f;
+      const float scale = max_h / static_cast<float>(h);
+      logo_display_w = static_cast<float>(w) * scale;
+      logo_display_h = max_h;
+      glGenTextures(1, &logo_texture);
+      glBindTexture(GL_TEXTURE_2D, logo_texture);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+      glBindTexture(GL_TEXTURE_2D, 0);
+      stbi_image_free(data);
+    }
+  }
 
   std::size_t selected = 0;
   std::string status_line;
@@ -515,11 +545,19 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path, con
     ImGui::Columns(1);
     ImGui::EndChild();
     ImGui::Separator();
+    if (logo_texture != 0) {
+      ImGui::Image(static_cast<ImTextureID>(logo_texture), ImVec2(logo_display_w, logo_display_h));
+      ImGui::SameLine();
+      ImGui::BeginGroup();
+    }
     ImGui::Text("Status: %s", status_line.empty() ? "ready" : status_line.c_str());
     const auto* selected_view = manager->process_at(selected);
     ImGui::TextWrapped("Command: %s",
                        (selected_view == nullptr || selected_view->command.empty()) ? "<none>"
                                                                                      : selected_view->command.c_str());
+    if (logo_texture != 0) {
+      ImGui::EndGroup();
+    }
 
     ImGui::End();
 
@@ -536,6 +574,10 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path, con
   }
 
   manager->stop_all();
+
+  if (logo_texture != 0) {
+    glDeleteTextures(1, &logo_texture);
+  }
 
   ImGui_ImplOpenGL3_Shutdown();
   ImGui_ImplGlfw_Shutdown();
