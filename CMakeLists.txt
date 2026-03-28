@@ -32,6 +32,10 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+option(
+  MADS_DIRECTOR_EXAMPLE_CONFIG "Example config is tailored for MADS." OFF
+)
+
 set(MADS_CMD_PREFIX "mads" CACHE STRING "Optional command prefix for the director executable name.")
 if(MADS_CMD_PREFIX STREQUAL "")
   set(DIRECTOR_EXE_NAME "director")
@@ -126,6 +130,9 @@ add_executable(${DIRECTOR_EXE_NAME}
   src/platform_process_posix.cpp
   src/platform_process_windows.cpp
 )
+if (MADS_DIRECTOR_EXAMPLE_CONFIG)
+  target_compile_definitions(${DIRECTOR_EXE_NAME} PRIVATE MADS_DIRECTOR_EXAMPLE_CONFIG)
+endif()
 
 target_include_directories(${DIRECTOR_EXE_NAME} PRIVATE src ${stb_SOURCE_DIR})
 

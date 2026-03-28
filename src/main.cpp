@@ -69,7 +69,7 @@ void print_example_config() {
       << "enabled = false\n"
       << "scale = 2\n"
       << "relaunch = false\n"
-      << "tty = false\n\n"
+      << "tty = false\n\n";
 #else
       << "[db] # process section name (mandatory)\n"
       << "command = \"./bin/db --port 5432 --wd=${PWD} --id=${ID}\" # mandatory: command line to execute\n"
