@@ -36,6 +36,8 @@
 
 namespace {
 
+constexpr ImVec4 kActiveProcessColor = ImVec4(0.35f, 0.82f, 0.38f, 1.0f);
+
 std::string runtime_label(const ProcessRuntimeView& view) {
   if (view.running) {
     if (view.pid > 0) {
@@ -450,8 +452,14 @@ int GuiApp::run(ProcessManager* manager, const std::string& executable_path, con
         ImGui::TableSetColumnIndex(0);
         const bool is_selected = (i == selected);
         const std::string label = process_list_label(*view);
+        if (view->running) {
+          ImGui::PushStyleColor(ImGuiCol_Text, kActiveProcessColor);
+        }
         if (ImGui::Selectable(label.c_str(), is_selected)) {
           selected = i;
+        }
+        if (view->running) {
+          ImGui::PopStyleColor();
         }
         ImGui::TextDisabled("%s", runtime_label(*view).c_str());
 
