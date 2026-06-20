@@ -12,7 +12,7 @@
     - `${ID}`: process instance index (0-based)
 - Optional fields:
   - `after = "process_name"`: start this process only after another process has started
-  - `workdir = "path"`: run process in this working directory (default: `director` working directory)
+  - `workdir = "path"`: run process in this working directory. Relative paths are resolved against the directory containing the `director.toml` file, which is also the default when omitted.
   - `enabled = <bool>`: disable auto-start when `false` (manual start from UI is still allowed; default: `true`)
   - `scale = <int>`: spawn N instances of this process
   - `relaunch = <bool>`: auto-restart on non-zero exit

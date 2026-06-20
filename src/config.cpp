@@ -7,6 +7,18 @@
 
 namespace {
 
+// Returns the absolute directory containing the config file at 'path'. Relative
+// paths are resolved against the current working directory. Portable across
+// macOS, Linux and Windows via std::filesystem.
+std::filesystem::path config_base_dir(const std::string& path) {
+  std::error_code ec;
+  std::filesystem::path absolute = std::filesystem::absolute(std::filesystem::path(path), ec);
+  if (ec) {
+    absolute = std::filesystem::path(path);
+  }
+  return absolute.parent_path();
+}
+
 bool parse_director(const toml::table& table, DirectorConfig* out_config, std::string* out_error) {
   const toml::node* terminal_node = table.get("terminal");
   if (terminal_node != nullptr) {
@@ -136,6 +148,8 @@ bool load_config(const std::string& path, DirectorConfig* out_config, std::strin
       *out_error = "Config must include at least one process section like [api].";
       return false;
     }
+
+    config.base_dir = config_base_dir(path);
 
     for (const auto& process : config.processes) {
       if (!process.after.has_value()) {

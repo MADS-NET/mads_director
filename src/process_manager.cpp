@@ -183,7 +183,8 @@ bool ProcessManager::initialize(const DirectorConfig& config, std::string* out_e
   if (config.terminal.has_value() && !config.terminal->empty()) {
     _terminal_command = config.terminal;
   }
-  const std::filesystem::path base_workdir = std::filesystem::current_path();
+  const std::filesystem::path base_workdir =
+      config.base_dir.empty() ? std::filesystem::current_path() : config.base_dir;
 
   std::vector<ProcessDefinition> definitions;
   if (!build_process_definitions(config, base_workdir, &definitions, out_error)) {
@@ -209,7 +210,8 @@ bool ProcessManager::initialize(const DirectorConfig& config, std::string* out_e
 }
 
 bool ProcessManager::reload(const DirectorConfig& config, std::string* out_error) {
-  const std::filesystem::path base_workdir = std::filesystem::current_path();
+  const std::filesystem::path base_workdir =
+      config.base_dir.empty() ? std::filesystem::current_path() : config.base_dir;
   std::vector<ProcessDefinition> definitions;
   if (!build_process_definitions(config, base_workdir, &definitions, out_error)) {
     return false;
