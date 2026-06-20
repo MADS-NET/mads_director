@@ -15,7 +15,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -38,7 +38,12 @@ jobs:
 
       - name: Configure (Windows)
         if: runner.os == 'Windows'
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+        # Do not pin the Visual Studio generator version: the hosted Windows
+        # image ships whichever Visual Studio is current (e.g. VS 2022 / 2026),
+        # so let CMake auto-detect the installed VS and only select the x64
+        # platform. The default VS generator is multi-config, so the Release
+        # build and build\Release\ output path below stay valid.
+        run: cmake -S . -B build -A x64
 
       - name: Build (Windows)
         if: runner.os == 'Windows'
